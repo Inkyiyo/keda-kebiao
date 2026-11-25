@@ -4,7 +4,7 @@
 
 ![周视图](docs/preview.png)
 
-**直接安装**：[下载 keda-kebiao-v1.0.3.apk](https://github.com/Inkyiyo/keda-kebiao/releases/download/v1.0.3/keda-kebiao-v1.0.3.apk)（120 KB，Android 8.0+）· Android 端全部逻辑在本机完成，不需要电脑跑服务。
+**直接安装**：[下载 keda-kebiao-v1.0.4.apk](https://github.com/Inkyiyo/keda-kebiao/releases/download/v1.0.4/keda-kebiao-v1.0.4.apk)（120 KB，Android 8.0+）· Android 端全部逻辑在本机完成，不需要电脑跑服务。
 
 ![APK](docs/apk-preview.png)
 

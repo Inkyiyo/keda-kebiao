@@ -84,7 +84,23 @@ public class HnustClient {
     private final String base;
     private final String loginSso;
     public String token;
-    public final Map<String, String> cookies = new LinkedHashMap<>();
+    /**
+     * Cookie 按域名分罐存。cas-i 与教务站都用 JSESSIONID 这个名字，
+     * v1.0.3 及以前共用一张全局表：两边的会话互相覆盖，每个请求还会
+     * 把所有 cookie 不分域名全量发出——真账号登录被拒的重要嫌疑，
+     * v1.0.4 改为按 host 隔离（与 Python 版 requests.Session 的行为一致）。
+     */
+    public final Map<String, Map<String, String>> cookies = new LinkedHashMap<>();
+
+    /** 取某个域名自己的 cookie 罐（没有就建一个空的）。 */
+    private Map<String, String> jarFor(String host) {
+        Map<String, String> jar = cookies.get(host);
+        if (jar == null) {
+            jar = new LinkedHashMap<>();
+            cookies.put(host, jar);
+        }
+        return jar;
+    }
 
     public HnustClient(String campus) {
         String key = "main";
@@ -115,17 +131,29 @@ public class HnustClient {
         this.token = token;
         if (storedCookies != null) {
             for (java.util.Iterator<String> it = storedCookies.keys(); it.hasNext(); ) {
-                String name = it.next();
-                cookies.put(name, storedCookies.optString(name, ""));
+                String host = it.next();
+                JSONObject jar = storedCookies.optJSONObject(host);
+                // v1.0.3 及以前存的是 {名字: 值} 的平铺格式（不分域名），
+                // 无法判断每条 cookie 属于哪个站，直接丢弃，重新登录一次即可。
+                if (jar == null) continue;
+                Map<String, String> mine = jarFor(host);
+                for (java.util.Iterator<String> jt = jar.keys(); jt.hasNext(); ) {
+                    String name = jt.next();
+                    mine.put(name, jar.optString(name, ""));
+                }
             }
         }
     }
 
     public JSONObject cookiesJson() {
         JSONObject obj = new JSONObject();
-        for (Map.Entry<String, String> e : cookies.entrySet()) {
+        for (Map.Entry<String, Map<String, String>> e : cookies.entrySet()) {
             try {
-                obj.put(e.getKey(), e.getValue());
+                JSONObject jar = new JSONObject();
+                for (Map.Entry<String, String> c : e.getValue().entrySet()) {
+                    jar.put(c.getKey(), c.getValue());
+                }
+                obj.put(e.getKey(), jar);
             } catch (Exception ignored) {
             }
         }
@@ -224,9 +252,11 @@ public class HnustClient {
             if (sharedContext == null) sharedContext = relaxedContext();
             if (sharedContext != null) ((HttpsURLConnection) conn).setSSLSocketFactory(sharedContext.getSocketFactory());
         }
-        if (!cookies.isEmpty()) {
+        // 只带这个域名自己的 cookie，绝不把别的站的会话发过来
+        Map<String, String> jar = cookies.get(new URL(url).getHost());
+        if (jar != null && !jar.isEmpty()) {
             StringBuilder sb = new StringBuilder();
-            for (Map.Entry<String, String> e : cookies.entrySet()) {
+            for (Map.Entry<String, String> e : jar.entrySet()) {
                 if (sb.length() > 0) sb.append("; ");
                 sb.append(e.getKey()).append('=').append(e.getValue());
             }
@@ -268,7 +298,7 @@ public class HnustClient {
                         String name = raw.substring(0, eq).trim();
                         String value = raw.substring(eq + 1, semi > eq ? semi : raw.length()).trim();
                         resp.setCookies.put(name, value);
-                        cookies.put(name, value);
+                        jarFor(new URL(url).getHost()).put(name, value);
                     }
                 }
             }
