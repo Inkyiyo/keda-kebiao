@@ -16,6 +16,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -807,38 +808,183 @@ public class HnustClient {
         return value == null ? "" : value.replaceAll("\\s+", " ").trim();
     }
 
-    /** classTime 是紧凑数字串，两两切片可拿到起止节次。 */
+    /**
+     * 解析节次。教务 classTime 是紧凑数字串，格式为
+     * 「星期(1 位) + 起始节次(2 位) + 结束节次(2 位)」，如周三 3–4 节 = "30304"，
+     * 也有无星期前缀的 "0304"。旧版从首位开始两两切片，"30304" 会切出
+     * 30、30 全被判无效、整门课被丢弃——v1.0.4 及以前课表全空的真因。
+     * 本算法与真机验证过的解析一致：奇数长度 ≥5 先去掉星期前缀再切。
+     */
     static int[] parseSections(String value) {
-        if (value == null || value.isEmpty()) return null;
-        String digits = value.replaceAll("\\D", "");
-        List<Integer> nums = new ArrayList<>();
-        for (int i = 0; i + 1 < digits.length(); i += 2) {
-            try {
-                int n = Integer.parseInt(digits.substring(i, i + 2));
-                if (n >= 1 && n <= 20) nums.add(n);
-            } catch (NumberFormatException ignored) {
+        if (value == null) return null;
+        String t = value.trim();
+        if (t.isEmpty()) return null;
+        try {
+            if (t.matches("\\d+")) {
+                String d = t;
+                if (d.length() % 2 == 1 && d.length() >= 5) d = d.substring(1);
+                if (d.length() == 3) {
+                    int a = d.charAt(0) - '0';
+                    int b = Integer.parseInt(d.substring(1));
+                    if (a >= 1 && b >= a && b <= 30) return new int[]{a, b};
+                    return null;
+                }
+                if (d.length() % 2 == 0 && d.length() >= 4) {
+                    int a = Integer.parseInt(d.substring(0, 2));
+                    int b = Integer.parseInt(d.substring(d.length() - 2));
+                    if (a >= 1 && b >= a && b <= 30) return new int[]{a, b};
+                    return null;
+                }
+                if (d.length() <= 2) {
+                    int a = Integer.parseInt(d);
+                    if (a >= 1 && a <= 30) return new int[]{a, a};
+                    return null;
+                }
+                return null;
             }
-        }
-        if (!nums.isEmpty()) {
-            int min = 99, max = 0;
-            for (int n : nums) {
-                min = Math.min(min, n);
-                max = Math.max(max, n);
+            String cleaned = t.replaceAll("[^0-9\\-~]", "");
+            String[] parts = cleaned.split("[-~]");
+            if (parts.length >= 2) {
+                int a = Integer.parseInt(parts[0]);
+                int b = Integer.parseInt(parts[1]);
+                if (a >= 1 && a <= 14 && b >= a) return new int[]{a, b};
+            } else if (parts.length == 1 && !parts[0].isEmpty()) {
+                int a = Integer.parseInt(parts[0]);
+                if (a >= 1 && a <= 14) return new int[]{a, a + 1};
             }
-            return new int[]{min, max};
-        }
-        Matcher range = Pattern.compile("(\\d+)\\s*[-~至]\\s*(\\d+)").matcher(value);
-        if (range.find()) {
-            int a = Integer.parseInt(range.group(1));
-            int b = Integer.parseInt(range.group(2));
-            if (a >= 1 && a <= 20 && b >= 1 && b <= 20) return new int[]{Math.min(a, b), Math.max(a, b)};
-        }
-        Matcher single = Pattern.compile("(\\d+)").matcher(value);
-        if (single.find()) {
-            int n = Integer.parseInt(single.group(1));
-            if (n >= 1 && n <= 20) return new int[]{n, n};
+        } catch (Exception ignored) {
         }
         return null;
+    }
+
+    /** 多个候选字段名里取第一个非空值（不同学期/校区字段名可能不同）。 */
+    private static String firstString(JSONObject j, String... keys) {
+        for (String k : keys) {
+            String v = j.optString(k, null);
+            if (v != null && !v.isEmpty()) return v;
+        }
+        return null;
+    }
+
+    /** 把 item 统一成「按天索引的数组」：也可能是 {"0": [...], "1": [...]} 形式的对象。 */
+    private static JSONArray asDayArray(Object item) throws org.json.JSONException {
+        if (item instanceof JSONArray) return (JSONArray) item;
+        if (item instanceof JSONObject) {
+            JSONObject obj = (JSONObject) item;
+            List<Integer> keys = new ArrayList<>();
+            for (java.util.Iterator<String> it = obj.keys(); it.hasNext(); ) {
+                try {
+                    keys.add(Integer.parseInt(it.next()));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            java.util.Collections.sort(keys);
+            JSONArray arr = new JSONArray();
+            for (int k : keys) arr.put(obj.opt(String.valueOf(k)));
+            return arr;
+        }
+        return null;
+    }
+
+    /** 取第 i 天的课程数组；当天元素也可能是 {courses:[...]} 或单门课对象。 */
+    private static JSONArray dayCourses(JSONArray items, int i) {
+        if (items == null || i >= items.length()) return null;
+        Object el = items.opt(i);
+        if (el instanceof JSONArray) return (JSONArray) el;
+        if (el instanceof JSONObject) {
+            JSONObject obj = (JSONObject) el;
+            for (String k : new String[]{"courses", "list", "courseList"}) {
+                JSONArray nested = obj.optJSONArray(k);
+                if (nested != null) return nested;
+            }
+            if (firstString(obj, "courseName", "kcmc", "name", "course_name") != null) {
+                JSONArray single = new JSONArray();
+                single.put(obj);
+                return single;
+            }
+        }
+        return null;
+    }
+
+    /** 原始课程对象 → 统一结构；认不出课程名才放弃，节次解析不出给默认 1–2 节也不丢课。 */
+    private static JSONObject toCourse(JSONObject raw) throws org.json.JSONException {
+        String name = firstString(raw, "courseName", "kcmc", "name", "course_name", "KCMC", "course");
+        if (name == null) return null;
+        int[] rng = null;
+        String timeText = firstString(raw, "classTime", "courseTime", "jcs", "jc", "kcsj", "section", "sksj", "jieshu");
+        if (timeText != null) rng = parseSections(timeText);
+        if (rng == null) {
+            int s = optIntField(raw, "ksjc", "kssj", "startSection", "start", "startPeriod", "ksj");
+            int e = optIntField(raw, "jsjc", "jssj", "endSection", "end", "endPeriod", "jsj");
+            if (s > 0) rng = new int[]{s, e > 0 ? e : s + 1};
+        }
+        if (rng == null) rng = new int[]{1, 2};
+        JSONObject course = new JSONObject();
+        course.put("name", clean(name));
+        String teacher = firstString(raw, "teacherName", "jsxm", "teacher", "js", "JSXM");
+        course.put("teacher", teacher == null ? "" : clean(teacher));
+        String location = firstString(raw, "location", "jsmc", "classroom", "classRoom", "room", "place", "JSMC");
+        course.put("location", location == null ? "" : clean(location));
+        course.put("start", rng[0]);
+        course.put("end", rng[1]);
+        String weeks = firstString(raw, "classWeek", "zc", "weeks", "skzc", "weekOfSemester");
+        course.put("weeks", weeks == null ? "" : clean(weeks));
+        return course;
+    }
+
+    private static int optIntField(JSONObject j, String... keys) {
+        for (String k : keys) {
+            if (j.has(k)) {
+                try {
+                    return Integer.parseInt(String.valueOf(j.opt(k)).replaceAll("[^0-9]", ""));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return 0;
+    }
+
+    /** 星期名（一..六/日）→ 1..7（周一=1，周日=7），认不出返回 -1。 */
+    private static int weekdayNumber(String xqmc) {
+        if (xqmc == null) return -1;
+        String s = xqmc.trim();
+        if (s.contains("一")) return 1;
+        if (s.contains("二")) return 2;
+        if (s.contains("三")) return 3;
+        if (s.contains("四")) return 4;
+        if (s.contains("五")) return 5;
+        if (s.contains("六")) return 6;
+        if (s.contains("日") || s.contains("天")) return 7;
+        try {
+            int v = Integer.parseInt(s.replaceAll("[^0-9]", ""));
+            if (v >= 1 && v <= 7) return v;
+        } catch (Exception ignored) {
+        }
+        return -1;
+    }
+
+    /** 平铺 courses 里的一门课属于星期几：优先 classTime 首位，其次 xqj/weekDay 等字段。 */
+    private static int courseWeekday(JSONObject raw) {
+        String ct = firstString(raw, "classTime", "courseTime");
+        if (ct != null) {
+            String d = ct.replaceAll("\\D", "");
+            if (d.length() >= 5) {
+                int v = d.charAt(0) - '0';
+                if (v >= 1 && v <= 7) return v;
+            }
+        }
+        String wd = firstString(raw, "xqj", "weekDay", "day", "weekday", "dayOfWeek", "xqmc");
+        if (wd != null) {
+            int v = weekdayNumber(wd);
+            if (v > 0) return v;
+            try {
+                int n = Integer.parseInt(wd.replaceAll("[^0-9]", ""));
+                if (n == 0) return 7;
+                if (n >= 1 && n <= 7) return n;
+            } catch (Exception ignored) {
+            }
+        }
+        return -1;
     }
 
     /** 把教务返回的原始课表整理成前端要的结构。 */
@@ -874,34 +1020,66 @@ public class HnustClient {
         if (week == null) week = 1;
 
         JSONArray dates = block.optJSONArray("date");
-        JSONArray items = block.optJSONArray("item");
+        JSONArray items = asDayArray(block.opt("item"));
         int dayCount = dates != null ? dates.length() : 7;
         if (dayCount < 7) dayCount = 7;
+
+        int rawTotal = 0;
+        int parsedTotal = 0;
+        String firstRaw = "";
+        List<List<JSONObject>> perDay = new ArrayList<>();
+        for (int i = 0; i < dayCount; i++) perDay.add(new ArrayList<>());
+        for (int i = 0; i < dayCount; i++) {
+            JSONArray rawCourses = dayCourses(items, i);
+            if (rawCourses == null) continue;
+            for (int j = 0; j < rawCourses.length(); j++) {
+                JSONObject raw = rawCourses.optJSONObject(j);
+                if (raw == null) continue;
+                rawTotal++;
+                if (firstRaw.isEmpty()) firstRaw = raw.toString();
+                JSONObject course = toCourse(raw);
+                if (course != null) {
+                    perDay.get(i).add(course);
+                    parsedTotal++;
+                }
+            }
+        }
+
+        // 兜底：item 里没课时，试平铺的 courses 数组（课程自带星期），按星期分到各天
+        if (parsedTotal == 0) {
+            JSONArray flat = block.optJSONArray("courses");
+            if (flat != null && flat.length() > 0) {
+                Map<Integer, Integer> dayIndexByWeekday = new HashMap<>();
+                for (int i = 0; i < dayCount; i++) {
+                    JSONObject dateInfo = dates != null && i < dates.length() ? dates.optJSONObject(i) : null;
+                    int wd = dateInfo == null ? -1 : weekdayNumber(dateInfo.optString("xqmc", ""));
+                    if (wd > 0) dayIndexByWeekday.put(wd, i);
+                }
+                for (int j = 0; j < flat.length(); j++) {
+                    JSONObject raw = flat.optJSONObject(j);
+                    if (raw == null) continue;
+                    rawTotal++;
+                    if (firstRaw.isEmpty()) firstRaw = raw.toString();
+                    JSONObject course = toCourse(raw);
+                    if (course == null) continue;
+                    int wd = courseWeekday(raw);
+                    Integer idx = wd > 0 ? dayIndexByWeekday.get(wd) : null;
+                    perDay.get(idx == null ? 0 : idx).add(course);
+                    parsedTotal++;
+                }
+            }
+        }
+
+        Diag.step("课表解析 week=" + week + " 原始课程=" + rawTotal + " 解析出=" + parsedTotal);
+        if (parsedTotal == 0 && rawTotal > 0 && !firstRaw.isEmpty()) {
+            Diag.info("首条原始课程：" + snippet(firstRaw));
+        }
 
         JSONArray days = new JSONArray();
         for (int i = 0; i < dayCount; i++) {
             JSONObject dateInfo = dates != null && i < dates.length() ? dates.optJSONObject(i) : null;
             if (dateInfo == null) dateInfo = new JSONObject();
-            JSONArray rawCourses = items != null && i < items.length() ? items.optJSONArray(i) : null;
-            List<JSONObject> parsed = new ArrayList<>();
-            if (rawCourses != null) {
-                for (int j = 0; j < rawCourses.length(); j++) {
-                    JSONObject raw = rawCourses.optJSONObject(j);
-                    if (raw == null) continue;
-                    String name = clean(raw.optString("courseName", raw.optString("course_name", "")));
-                    if (name.isEmpty()) continue;
-                    int[] rng = parseSections(raw.optString("classTime", ""));
-                    if (rng == null) continue;
-                    JSONObject course = new JSONObject();
-                    course.put("name", name);
-                    course.put("teacher", clean(raw.optString("teacherName", raw.optString("teacher", ""))));
-                    course.put("location", clean(raw.optString("location", raw.optString("classRoom", ""))));
-                    course.put("start", rng[0]);
-                    course.put("end", rng[1]);
-                    course.put("weeks", clean(raw.optString("classWeek", raw.optString("weeks", ""))));
-                    parsed.add(course);
-                }
-            }
+            List<JSONObject> parsed = perDay.get(i);
             java.util.Collections.sort(parsed, (a, b) -> {
                 int sa = a.optInt("start"), sb = b.optInt("start");
                 if (sa != sb) return Integer.compare(sa, sb);

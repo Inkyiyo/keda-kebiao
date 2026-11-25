@@ -236,32 +236,134 @@ def _clean(text) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
-def parse_sections_from_class_time(value: str) -> tuple[int, int] | None:
+def parse_sections_from_class_time(value) -> tuple[int, int] | None:
     """
-    classTime 是紧凑数字串，第 2–3 位是起始节次，如 ...0304... 表示第 3 节开始。
-    为兼容不同学期格式，这里把数字两两切片后取最小/最大值。
+    classTime 是紧凑数字串，格式为「星期(1 位) + 起始节次(2 位) + 结束节次(2 位)，
+    如周三 3–4 节 = "30304"；也有无星期前缀的 "0304"。
+    旧版从首位开始两两切片，"30304" 切出 30、30 全被判无效、整门课被丢弃
+    （课表全空的真因）。这里与真机验证过的解析一致：奇数长度 ≥5 先去星期前缀。
     """
-    if not value:
+    if value is None:
         return None
-    text = str(value)
-    digits = re.sub(r"\D", "", text)
-    pairs = []
-    for i in range(0, len(digits) - 1, 2):
-        num = int(digits[i:i + 2])
-        if 1 <= num <= 20:
-            pairs.append(num)
-    if not pairs:
-        m = re.search(r"(\d+)\s*[-~至]\s*(\d+)", text)
-        if m:
-            a, b = int(m.group(1)), int(m.group(2))
-            if 1 <= a <= 20 and 1 <= b <= 20:
-                return (min(a, b), max(a, b))
-        m = re.search(r"(\d+)", text)
-        if m and 1 <= int(m.group(1)) <= 20:
-            n = int(m.group(1))
-            return (n, n)
+    text = str(value).strip()
+    if not text:
         return None
-    return (min(pairs), max(pairs))
+    try:
+        if re.fullmatch(r"\d+", text):
+            d = text
+            if len(d) % 2 == 1 and len(d) >= 5:
+                d = d[1:]
+            if len(d) == 3:
+                a = int(d[0])
+                b = int(d[1:])
+                return (a, b) if 1 <= a <= b <= 30 else None
+            if len(d) % 2 == 0 and len(d) >= 4:
+                a = int(d[:2])
+                b = int(d[-2:])
+                return (a, b) if 1 <= a <= b <= 30 else None
+            if len(d) <= 2:
+                a = int(d)
+                return (a, a) if 1 <= a <= 30 else None
+            return None
+        cleaned = re.sub(r"[^0-9\-~]", "", text)
+        parts = cleaned.split("-") if "-" in cleaned else cleaned.split("~")
+        parts = [p for p in parts if p != ""]
+        if len(parts) >= 2:
+            a, b = int(parts[0]), int(parts[1])
+            if 1 <= a <= 14 and b >= a:
+                return (a, b)
+        elif len(parts) == 1:
+            a = int(parts[0])
+            if 1 <= a <= 14:
+                return (a, a + 1)
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _first(raw: dict, *keys: str):
+    for k in keys:
+        v = raw.get(k)
+        if v is not None and str(v) != "":
+            return v
+    return None
+
+
+def _to_course(raw: dict) -> dict | None:
+    """原始课程 → 统一结构；认不出课程名才放弃，节次解析不出给默认 1–2 节也不丢课。"""
+    name = _first(raw, "courseName", "kcmc", "name", "course_name", "KCMC", "course")
+    if not name:
+        return None
+    rng = None
+    time_text = _first(raw, "classTime", "courseTime", "jcs", "jc", "kcsj", "section", "sksj", "jieshu")
+    if time_text is not None:
+        rng = parse_sections_from_class_time(time_text)
+    if rng is None:
+        s = _int_field(raw, "ksjc", "kssj", "startSection", "start", "startPeriod", "ksj")
+        e = _int_field(raw, "jsjc", "jssj", "endSection", "end", "endPeriod", "jsj")
+        if s > 0:
+            rng = (s, e if e > 0 else s + 1)
+    if rng is None:
+        rng = (1, 2)
+    teacher = _first(raw, "teacherName", "jsxm", "teacher", "js", "JSXM")
+    location = _first(raw, "location", "jsmc", "classroom", "classRoom", "room", "place", "JSMC")
+    weeks = _first(raw, "classWeek", "zc", "weeks", "skzc", "weekOfSemester")
+    return {
+        "name": _clean(name),
+        "teacher": _clean(teacher),
+        "location": _clean(location),
+        "start": rng[0],
+        "end": rng[1],
+        "weeks": _clean(weeks),
+    }
+
+
+def _int_field(raw: dict, *keys: str) -> int:
+    for k in keys:
+        if k in raw:
+            try:
+                return int(re.sub(r"[^0-9]", "", str(raw[k])) or 0)
+            except ValueError:
+                pass
+    return 0
+
+
+def _weekday_number(xqmc) -> int:
+    if xqmc is None:
+        return -1
+    s = str(xqmc).strip()
+    for name, num in (("一", 1), ("二", 2), ("三", 3), ("四", 4), ("五", 5), ("六", 6)):
+        if name in s:
+            return num
+    if "日" in s or "天" in s:
+        return 7
+    digits = re.sub(r"[^0-9]", "", s)
+    if digits:
+        v = int(digits)
+        if 1 <= v <= 7:
+            return v
+    return -1
+
+
+def _course_weekday(raw: dict) -> int:
+    ct = _first(raw, "classTime", "courseTime")
+    if ct is not None:
+        d = re.sub(r"\D", "", str(ct))
+        if len(d) >= 5 and 1 <= int(d[0]) <= 7:
+            return int(d[0])
+    wd = _first(raw, "xqj", "weekDay", "day", "weekday", "dayOfWeek", "xqmc")
+    if wd is not None:
+        v = _weekday_number(wd)
+        if v > 0:
+            return v
+        digits = re.sub(r"[^0-9]", "", str(wd))
+        if digits:
+            n = int(digits)
+            if n == 0:
+                return 7
+            if 1 <= n <= 7:
+                return n
+    return -1
 
 
 # --------------------------------------------------------------------------- #
@@ -604,33 +706,53 @@ def normalize_curriculum(payload: dict, wanted_week: int | None = None) -> dict:
 
     dates = block.get("date") or []
     items = block.get("item") or []
+    if isinstance(items, dict):  # {"0": [...], "1": [...]} 形式
+        items = [items.get(str(k)) for k in sorted(int(k) for k in items if str(k).isdigit())]
+
+    day_total = max(len(dates), 7)
+    per_day: list[list[dict]] = [[] for _ in range(day_total)]
+    parsed_total = 0
+    for index in range(day_total):
+        raw_courses = items[index] if index < len(items) else []
+        if isinstance(raw_courses, dict):
+            nested = None
+            for k in ("courses", "list", "courseList"):
+                if isinstance(raw_courses.get(k), list):
+                    nested = raw_courses[k]
+                    break
+            raw_courses = nested if nested is not None else [raw_courses]
+        if not isinstance(raw_courses, list):
+            continue
+        for raw in raw_courses:
+            if not isinstance(raw, dict):
+                continue
+            course = _to_course(raw)
+            if course is not None:
+                per_day[index].append(course)
+                parsed_total += 1
+
+    # 兜底：item 里没课时，试平铺的 courses 数组（课程自带星期），按星期分到各天
+    if parsed_total == 0 and isinstance(block.get("courses"), list) and block["courses"]:
+        by_weekday = {}
+        for index in range(day_total):
+            info = dates[index] if index < len(dates) else {}
+            wd = _weekday_number(info.get("xqmc")) if isinstance(info, dict) else -1
+            if wd > 0:
+                by_weekday[wd] = index
+        for raw in block["courses"]:
+            if not isinstance(raw, dict):
+                continue
+            course = _to_course(raw)
+            if course is None:
+                continue
+            idx = by_weekday.get(_course_weekday(raw), 0)
+            per_day[idx].append(course)
+            parsed_total += 1
 
     days = []
-    for index in range(max(len(dates), 7 if not dates else len(dates))):
+    for index in range(day_total):
         date_info = dates[index] if index < len(dates) else {}
-        raw_courses = items[index] if index < len(items) else []
-        courses = []
-        if isinstance(raw_courses, list):
-            for raw in raw_courses:
-                if not isinstance(raw, dict):
-                    continue
-                name = _clean(raw.get("courseName") or raw.get("course_name"))
-                if not name:
-                    continue
-                rng = parse_sections_from_class_time(raw.get("classTime"))
-                if not rng:
-                    continue
-                teacher = _clean(raw.get("teacherName") or raw.get("teacher"))
-                location = _clean(raw.get("location") or raw.get("classRoom"))
-                courses.append({
-                    "name": name,
-                    "teacher": teacher,
-                    "location": location,
-                    "start": rng[0],
-                    "end": rng[1],
-                    "weeks": _clean(raw.get("classWeek") or raw.get("weeks") or ""),
-                })
-        courses.sort(key=lambda c: (c["start"], c["name"]))
+        courses = sorted(per_day[index], key=lambda c: (c["start"], c["name"]))
         days.append({
             "date": _clean(date_info.get("mxrq")),
             "weekday": _clean(date_info.get("xqmc")) or (
