@@ -1,0 +1,16 @@
+科大课表 · 诊断日志（样例）
+应用 1.0.2（versionCode 3）/ Android 14（API 34）/ 小米 14
+说明：password / token / ticket / execution / 学号后 6 位均已打码
+说明：以下是拿一个不存在的学号做的真实失败样例，用于对照格式
+------------------------------------------------------------
+[18:42:57.012] H GET https://cas-i.hnust.edu.cn/cas/login?service=http%3A%2F%2Fkdfw.hnust.edu.cn%2Fbbxyhd%2FloginSso%3FtoMenu%3Dxs_kcb -> 200 (133107B, 598ms)
+[18:42:57.017] S 登录开始 campus=main 学号=0000******
+[18:42:57.017] S CAS 登录页 已加载
+[18:42:57.020] S 拿到 execution（12957 字符）
+[18:42:57.243] H GET https://cas-i.hnust.edu.cn/cas/jwt/publicKey -> 200 (444B, 223ms)
+[18:42:57.246] S 密码已加密，密文 351 字符
+[18:42:57.525] H POST https://cas-i.hnust.edu.cn/cas/login?service=http%3A%2F%2Fkdfw.hnust.edu.cn%2Fbbxyhd%2FloginSso%3FtoMenu%3Dxs_kcb -> 401 (134186B, 276ms)
+[18:42:57.528] S CAS 提交返回 401（无跳转）
+[18:42:57.528] S 未取到 token，跳转 0 跳
+[18:42:57.533] E 登录被拒，页面提示：账号或密码错误，需验证码=false
+[18:42:57.897] H POST https://cas-i.hnust.edu.cn/token/password/passwordLogin?username=0000******&password=*** -> 401 (153B, 362ms)

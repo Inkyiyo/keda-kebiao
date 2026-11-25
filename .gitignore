@@ -1,0 +1,14 @@
+data/
+__pycache__/
+*.pyc
+.DS_Store
+
+# 构建中间产物（源码在 android/app，构建脚本见 android/build.sh）
+android/build/
+android/out/
+*.idsig
+
+# 签名密钥：永不入库
+android/keystore/
+.secrets/
+*.jks

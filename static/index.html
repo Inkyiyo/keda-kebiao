@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="theme-color" content="#0F5C4C" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="科大课表" />
+<title>科大课表 · 湖南科技大学</title>
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/static/icon-192.png" />
+<link rel="icon" href="/static/icon-192.png" />
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="stage">
+  <aside class="intro">
+    <div class="intro-mark">课</div>
+    <h1>科大课表</h1>
+    <p class="intro-sub">湖南科技大学 · 移动教务</p>
+    <p class="intro-copy">登录一次，之后打开就是这一周。<br />数据直连学校教务系统，密码只发往统一认证。</p>
+    <ul class="intro-list">
+      <li><span>01</span>周视图 / 全学期课程汇总</li>
+      <li><span>02</span>本地保存登录态，过期自动续期</li>
+      <li><span>03</span>可添加到手机主屏幕当 App 用</li>
+    </ul>
+    <p class="intro-note">非官方应用 · 仅供个人课表查询</p>
+  </aside>
+
+  <div class="phone">
+    <div class="app" id="app">
+      <!-- 登录 -->
+      <section class="screen screen--login" id="screen-login">
+        <div class="login-top">
+          <div class="login-badge">HNUST</div>
+          <h2>欢迎回来</h2>
+          <p>用统一身份认证账号登录，查看本学期课表</p>
+        </div>
+        <form class="login-card" id="login-form" autocomplete="on">
+          <div class="seg" id="campus-seg">
+            <button type="button" class="seg-item is-active" data-campus="main">本部</button>
+            <button type="button" class="seg-item" data-campus="xx">潇湘学院</button>
+          </div>
+          <label class="field">
+            <span>学号</span>
+            <input id="input-user" name="username" inputmode="numeric" placeholder="请输入学号" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input id="input-pass" name="password" type="password" placeholder="统一身份认证密码" autocomplete="current-password" />
+            <button type="button" class="field-eye" id="toggle-pass" aria-label="显示密码">
+              <svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+            </button>
+          </label>
+          <div class="captcha-row" id="captcha-row" hidden>
+            <label class="field field--captcha">
+              <span>验证码</span>
+              <input id="input-captcha" inputmode="text" placeholder="输入右侧字符" maxlength="6" />
+            </label>
+            <img id="captcha-img" alt="图形验证码" />
+          </div>
+          <div class="login-options">
+            <label class="check">
+              <input type="checkbox" id="remember" checked />
+              <i></i><span>记住登录状态</span>
+            </label>
+            <span class="hint-inline">忘密码？去融合门户找回</span>
+          </div>
+          <button class="btn-primary" type="submit" id="login-btn">登 录</button>
+          <p class="login-error" id="login-error" hidden></p>
+        </form>
+        <div class="login-foot">
+          <button class="btn-ghost" id="demo-btn">先看看示例课表</button>
+          <p class="fineprint">账号密码仅提交至 <b>cas-i.hnust.edu.cn</b>，本应用不保存明文。<br />建议在校园网或学校 VPN 下使用。</p>
+          <button class="link-log" id="login-log">登录不上？导出诊断日志</button>
+        </div>
+      </section>
+
+      <!-- 主界面 -->
+      <section class="screen screen--main" id="screen-main" hidden>
+        <header class="topbar">
+          <div class="topbar-row">
+            <div class="week-title">
+              <div class="week-line">
+                <h2 id="week-title">第 12 周</h2>
+                <span class="tag" id="week-tag" hidden>本周</span>
+              </div>
+              <p id="week-range">11月23日 – 11月29日</p>
+            </div>
+            <div class="topbar-actions">
+              <button class="icon-btn" id="today-btn" title="回到本周">
+                <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>
+              </button>
+              <button class="icon-btn" id="refresh-btn" title="刷新">
+                <svg viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.6h-4.6"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="mode-strip" id="mode-strip" hidden>
+            <span>演示数据</span>
+            <button id="exit-demo">去登录</button>
+          </div>
+        </header>
+
+        <div class="week-nav">
+          <button class="nav-arrow" id="prev-week" aria-label="上一周">
+            <svg viewBox="0 0 24 24"><path d="M14.5 5 8 12l6.5 7"/></svg>
+          </button>
+          <div class="week-track" id="week-track">
+            <span class="week-chip is-active" data-w="11">11</span>
+            <span class="week-chip" data-w="12">12</span>
+            <span class="week-chip" data-w="13">13</span>
+          </div>
+          <button class="nav-arrow" id="next-week" aria-label="下一周">
+            <svg viewBox="0 0 24 24"><path d="M9.5 5 16 12l-6.5 7"/></svg>
+          </button>
+        </div>
+
+        <div class="grid-wrap" id="grid-wrap">
+          <div class="grid-head" id="grid-head"></div>
+          <div class="grid-body" id="grid-body"></div>
+          <div class="grid-loading" id="grid-loading" hidden>
+            <div class="loader"></div>
+            <p>正在取课表…</p>
+          </div>
+          <div class="grid-empty" id="grid-empty" hidden>
+            <div class="empty-art"><i></i><i></i><i></i></div>
+            <p class="empty-title">这一周没有课</p>
+            <p class="empty-sub">去别处转转，或者确认下是否选课周</p>
+          </div>
+        </div>
+
+        <p class="grid-foot" id="grid-foot"></p>
+      </section>
+
+      <!-- 课程 -->
+      <section class="screen screen--courses" id="screen-courses" hidden>
+        <header class="pagebar">
+          <h2>全部课程</h2>
+          <p id="courses-sub">本学期共 0 门课</p>
+        </header>
+        <div class="page-scroll">
+          <div class="courses-toolbar" id="courses-toolbar">
+            <span id="scan-note">已统计第 12 周</span>
+            <button class="btn-mini" id="scan-btn">扫描全学期</button>
+          </div>
+          <div class="course-list" id="course-list"></div>
+          <div class="list-loading" id="courses-loading" hidden>
+            <div class="loader"></div><p>正在汇总全学期课程…</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 我的 -->
+      <section class="screen screen--me" id="screen-me" hidden>
+        <header class="pagebar pagebar--me">
+          <div class="me-head">
+            <div class="avatar" id="me-avatar">科</div>
+            <div>
+              <h2 id="me-name">未登录</h2>
+              <p id="me-sub">湖南科技大学 · 本部</p>
+            </div>
+          </div>
+        </header>
+        <div class="page-scroll">
+          <div class="card">
+            <div class="card-row card-row--split">
+              <span>学期进度</span>
+              <b id="progress-text">12 / 20 周</b>
+            </div>
+            <div class="progress"><i id="progress-bar" style="width:60%"></i></div>
+            <div class="card-row card-row--split muted">
+              <span id="term-start">开学 2026-09-07</span>
+              <span id="data-source">数据源 · 演示</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-row card-row--split">
+              <span>学期总周数</span>
+              <div class="stepper">
+                <button id="weeks-minus" aria-label="减少">−</button>
+                <b id="weeks-value">20</b>
+                <button id="weeks-plus" aria-label="增加">+</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card card--list">
+            <button class="list-row" id="row-refresh">
+              <span>刷新课表</span><i>清空缓存重新拉取</i>
+              <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+            </button>
+            <button class="list-row" id="row-relogin">
+              <span>重新登录</span><i>更换账号或密码失效时</i>
+              <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+            </button>
+            <button class="list-row" id="row-log">
+              <span>导出诊断日志</span><i>登录异常时先点这里</i>
+              <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+            </button>
+            <button class="list-row" id="row-logout">
+              <span class="danger">退出登录</span><i>清除本机登录态</i>
+              <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+
+          <div class="card about">
+            <p><b>关于</b> 科大课表 v<span id="app-ver">1.0.3</span> · 非官方</p>
+            <p>课表来自学校移动教务（<span id="api-host">kdfw.hnust.edu.cn</span>）。账号只发往学校统一认证服务器，不经过任何第三方。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 底部导航 -->
+      <nav class="tabbar" id="tabbar" hidden>
+        <button class="tab is-active" data-tab="main">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 3v3.5M16 3v3.5M8 13h3M8 16.5h6"/></svg>
+          <span>课表</span>
+        </button>
+        <button class="tab" data-tab="courses">
+          <svg viewBox="0 0 24 24"><path d="M4 5.5h7v13H4zM13 5.5h7v13h-7z"/><path d="M6.5 9h2M6.5 12h2M15.5 9h2M15.5 12h2"/></svg>
+          <span>课程</span>
+        </button>
+        <button class="tab" data-tab="me">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4S18.3 16.4 19.5 20"/></svg>
+          <span>我的</span>
+        </button>
+      </nav>
+
+      <!-- 课程详情 -->
+      <div class="sheet-mask" id="sheet-mask" hidden></div>
+      <section class="sheet" id="sheet" hidden>
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div class="sheet-dot" id="sheet-dot"></div>
+          <div>
+            <h3 id="sheet-name">课程</h3>
+            <p id="sheet-time">周三 1-2 节 · 08:00 – 09:40</p>
+          </div>
+        </div>
+        <div class="sheet-rows">
+          <div class="sheet-row"><span>地点</span><b id="sheet-room">—</b></div>
+          <div class="sheet-row"><span>教师</span><b id="sheet-teacher">—</b></div>
+          <div class="sheet-row"><span>周次</span><b id="sheet-weeks">—</b></div>
+        </div>
+        <button class="btn-primary btn-primary--soft" id="sheet-close">知道了</button>
+      </section>
+
+      <div class="toast" id="toast" hidden></div>
+    </div>
+  </div>
+</div>
+<script src="/static/native-shim.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

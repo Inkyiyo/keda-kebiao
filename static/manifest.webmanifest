@@ -1,0 +1,17 @@
+{
+  "name": "科大课表 · 湖南科技大学",
+  "short_name": "科大课表",
+  "description": "湖南科技大学移动教务课表，周视图与全学期课程汇总。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F4ED",
+  "theme_color": "#0F5C4C",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
