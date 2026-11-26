@@ -297,6 +297,10 @@ class Api {
                 if (!json.isEmpty()) {
                     try {
                         JSONObject cached = new JSONObject(json);
+                        // 课程页的聚合统计读的是内存表：缓存命中也要入表，
+                        // 否则统计只剩本次联网取过的那一周（v1.0.8 的 bug）。
+                        // stamp=0 保持「已过期」，不影响前端的静默校对。
+                        cachePut(pkey, new JSONObject(json), 0);
                         cached.put("stale", true);
                         Diag.step("课表 week=" + pkey + " 命中本地缓存，先显示后校对");
                         return cached;

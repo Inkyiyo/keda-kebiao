@@ -858,6 +858,12 @@ public class HnustClient {
     }
 
     /** 多个候选字段名里取第一个非空值（不同学期/校区字段名可能不同）。 */
+    /** 「第八教学楼512」→「八教512」：课表块窄，全称显示不下、房间号会被截掉。 */
+    static String abbreviateLocation(String location) {
+        if (location == null) return "";
+        return location.replaceAll("第([一二三四五六七八九十]+)教学楼", "$1教");
+    }
+
     private static String firstString(JSONObject j, String... keys) {
         for (String k : keys) {
             String v = j.optString(k, null);
@@ -924,7 +930,7 @@ public class HnustClient {
         String teacher = firstString(raw, "teacherName", "jsxm", "teacher", "js", "JSXM");
         course.put("teacher", teacher == null ? "" : clean(teacher));
         String location = firstString(raw, "location", "jsmc", "classroom", "classRoom", "room", "place", "JSMC");
-        course.put("location", location == null ? "" : clean(location));
+        course.put("location", location == null ? "" : abbreviateLocation(clean(location)));
         course.put("start", rng[0]);
         course.put("end", rng[1]);
         String weeks = firstString(raw, "classWeek", "zc", "weeks", "skzc", "weekOfSemester");

@@ -307,6 +307,9 @@ def _to_course(raw: dict) -> dict | None:
         rng = (1, 2)
     teacher = _first(raw, "teacherName", "jsxm", "teacher", "js", "JSXM")
     location = _first(raw, "location", "jsmc", "classroom", "classRoom", "room", "place", "JSMC")
+    if location:
+        # 「第八教学楼512」→「八教512」：课表块窄，全称显示不下
+        location = re.sub(r"第([一二三四五六七八九十]+)教学楼", r"\1教", str(location))
     weeks = _first(raw, "classWeek", "zc", "weeks", "skzc", "weekOfSemester")
     return {
         "name": _clean(name),
