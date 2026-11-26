@@ -451,6 +451,7 @@
       : (s.nextWake ? `下一次 ${s.nextWake}` : "提前 55 分钟 · 暂无安排");
     $("#remind-desc").textContent = !remindOn ? "已关闭"
       : (s.nextRemind ? `下一次 ${s.nextRemind}` : "提前 30 分钟 · 暂无安排");
+    $("#row-exact").hidden = s.exactAlarm !== false;
   }
 
   async function updateWeeks(delta) {
@@ -630,6 +631,14 @@
     }
     $("#row-wake").addEventListener("click", () => toggleAlarm("wake"));
     $("#row-remind").addEventListener("click", () => toggleAlarm("remind"));
+    $("#row-exact").addEventListener("click", async () => {
+      try {
+        await api("/api/open-exact-alarms", { method: "POST", body: "{}" });
+        toast("在系统页里打开「允许设置闹钟和提醒」");
+      } catch (err) {
+        toast("打开系统设置失败，请到应用信息里手动授权");
+      }
+    });
 
     // App 内用真实版本号，网页版保留默认值
     try {

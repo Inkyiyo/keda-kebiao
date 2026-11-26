@@ -138,6 +138,8 @@ class ClassAlarms {
         } catch (Exception e) {
             Diag.error("排上课闹钟失败：" + e.getMessage());
         }
+        // 小组件的下一个刷新点跟着一起排
+        WidgetClock.scheduleNext(ctx);
     }
 
     private static void arm(Context ctx, AlarmManager am, Store store, boolean morning) {

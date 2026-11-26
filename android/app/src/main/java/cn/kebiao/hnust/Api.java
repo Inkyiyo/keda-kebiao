@@ -79,6 +79,8 @@ class Api {
                     return courses(params).toString();
                 case "/api/settings":
                     return settings(body).toString();
+                case "/api/open-exact-alarms":
+                    return openExactAlarmSettings().toString();
                 default:
                     return fail("接口不存在：" + route, "error").toString();
             }
@@ -166,8 +168,30 @@ class Api {
             }
             obj.put("nextWake", nextWake);
             obj.put("nextRemind", nextRemind);
+            obj.put("exactAlarm", WidgetClock.exactAllowed(appCtx));
         } catch (Exception ignored) {
         }
+    }
+
+    /** 打开系统的「闹钟和提醒」授权页（精确闹钟权限），小组件实时刷新要用。 */
+    private JSONObject openExactAlarmSettings() {
+        try {
+            android.content.Intent intent = new android.content.Intent(
+                    android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    android.net.Uri.parse("package:" + appCtx.getPackageName()));
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            appCtx.startActivity(intent);
+        } catch (Exception e) {
+            try {
+                android.content.Intent fallback = new android.content.Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:" + appCtx.getPackageName()));
+                fallback.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                appCtx.startActivity(fallback);
+            } catch (Exception ignored) {
+            }
+        }
+        return ok();
     }
 
     static String campusName(String key) {

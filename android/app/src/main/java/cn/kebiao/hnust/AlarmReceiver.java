@@ -21,6 +21,12 @@ public class AlarmReceiver extends BroadcastReceiver {
                     intent.getStringExtra("location"),
                     intent.getStringExtra("classTime"));
             ClassAlarms.reschedule(context);
+            return;
+        }
+        if (WidgetClock.ACTION_TICK.equals(action)) {
+            // 到达上课/下课/跨天的边界：刷新小组件，reschedule 会链式排下一个刷新点
+            Widgets.refreshAll(context);
+            ClassAlarms.reschedule(context);
         }
     }
 }
