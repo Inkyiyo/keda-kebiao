@@ -88,6 +88,13 @@ public class TodayWidget extends AppWidgetProvider {
                 views.addView(R.id.w_today_rows, more);
             }
         }
+        // 底部一行：明天第一课预告，卡片拉高时也不空着
+        List<Upcoming.Info> tomorrow = store.loggedIn()
+                ? Upcoming.dayCourses(store, today.plusDays(1)) : new java.util.ArrayList<>();
+        views.setTextViewText(R.id.w_today_footer, tomorrow.isEmpty()
+                ? "明天没有课"
+                : "明天第一课 " + Upcoming.hhmm(tomorrow.get(0).start) + " " + tomorrow.get(0).name
+                        + (tomorrow.get(0).location.isEmpty() ? "" : " · " + tomorrow.get(0).location));
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(context, 4202, open,

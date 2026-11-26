@@ -41,6 +41,7 @@ public class NextClassWidget extends AppWidgetProvider {
             views.setTextViewText(R.id.w_next_name, store.loggedIn() ? "暂无课程安排" : "还没有课表");
             views.setTextViewText(R.id.w_next_meta, store.loggedIn() ? "打开 App 刷新一下课表" : "点按打开科大课表登录");
             views.setTextViewText(R.id.w_next_sub, "");
+            views.setTextViewText(R.id.w_next_footer, "");
         } else {
             LocalDateTime now = LocalDateTime.now();
             String label;
@@ -63,6 +64,19 @@ public class NextClassWidget extends AppWidgetProvider {
                     Upcoming.dayLabel(info.date) + " " + Upcoming.hhmm(info.start) + "–" + Upcoming.hhmm(info.end)
                             + (info.teacher.isEmpty() ? "" : " · " + info.teacher));
             views.setTextViewText(R.id.w_next_sub, sub);
+            // 底部一行：今天还剩几节课（或今天的课已上完）
+            java.util.List<Upcoming.Info> todayList = Upcoming.dayCourses(store, java.time.LocalDate.now());
+            int remaining = 0;
+            for (Upcoming.Info item : todayList) {
+                if (LocalDateTime.of(item.date, item.end).isAfter(now)) remaining++;
+            }
+            String footer;
+            if (info.date.equals(java.time.LocalDate.now())) {
+                footer = remaining > 0 ? "今天还剩 " + remaining + " 节课" : "";
+            } else {
+                footer = remaining > 0 ? "今天还剩 " + remaining + " 节课" : "今天的课已经上完";
+            }
+            views.setTextViewText(R.id.w_next_footer, footer);
         }
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
