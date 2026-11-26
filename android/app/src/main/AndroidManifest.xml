@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cn.kebiao.hnust"
-    android:versionCode="10"
-    android:versionName="1.0.9">
+    android:versionCode="11"
+    android:versionName="1.0.10">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="false"
@@ -37,5 +40,15 @@
             android:authorities="cn.kebiao.hnust.diag"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <!-- 上课闹钟：到点发通知、开机重排 -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="cn.kebiao.hnust.CLASS_ALARM_FIRE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

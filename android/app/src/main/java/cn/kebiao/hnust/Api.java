@@ -32,6 +32,7 @@ class Api {
     }
 
     private final Store store;
+    private final Context appCtx;
     private final Map<Integer, long[]> stamps = new HashMap<>();
     private final Map<Integer, JSONObject> weeks = new HashMap<>();
     private final Map<String, HnustClient> pending = new HashMap<>();
@@ -39,6 +40,7 @@ class Api {
     private final long startedAt = System.currentTimeMillis();
 
     private Api(Context ctx) {
+        appCtx = ctx;
         store = new Store(ctx);
     }
 
@@ -141,9 +143,31 @@ class Api {
             obj.put("totalWeeks", store.totalWeeks());
             obj.put("currentWeek", todayWeek());
             obj.put("uptime", (System.currentTimeMillis() - startedAt) / 1000);
+            putAlarmInfo(obj);
         } catch (Exception ignored) {
         }
         return obj;
+    }
+
+    /** 闹钟开关状态 + 下一次触发说明，供「我的」页展示。 */
+    private void putAlarmInfo(JSONObject obj) {
+        try {
+            obj.put("wakeAlarm", store.wakeAlarm());
+            obj.put("remindAlarm", store.remindAlarm());
+            String nextWake = "";
+            String nextRemind = "";
+            if (store.loggedIn()) {
+                if (store.wakeAlarm()) {
+                    nextWake = ClassAlarms.describe(ClassAlarms.findNext(store, true));
+                }
+                if (store.remindAlarm()) {
+                    nextRemind = ClassAlarms.describe(ClassAlarms.findNext(store, false));
+                }
+            }
+            obj.put("nextWake", nextWake);
+            obj.put("nextRemind", nextRemind);
+        } catch (Exception ignored) {
+        }
     }
 
     static String campusName(String key) {
@@ -436,7 +460,10 @@ class Api {
             }
         }
         boolean force = "1".equals(params.get("refresh"));
-        return fetchWeek(week, force);
+        JSONObject result = fetchWeek(week, force);
+        // 每次拿到课表都顺手重排一次上课闹钟（本地计算，很便宜）
+        ClassAlarms.reschedule(appCtx);
+        return result;
     }
 
     private JSONObject courses(Map<String, String> params) {
@@ -623,10 +650,19 @@ class Api {
                 return fail("总周次必须是数字", "error");
             }
         }
+        if (body.has("wakeAlarm")) {
+            store.setWakeAlarm(body.optBoolean("wakeAlarm", true));
+            ClassAlarms.reschedule(appCtx);
+        }
+        if (body.has("remindAlarm")) {
+            store.setRemindAlarm(body.optBoolean("remindAlarm", true));
+            ClassAlarms.reschedule(appCtx);
+        }
         JSONObject obj = ok();
         try {
             obj.put("totalWeeks", store.totalWeeks());
             obj.put("campus", store.campus());
+            putAlarmInfo(obj);
         } catch (Exception ignored) {
         }
         return obj;

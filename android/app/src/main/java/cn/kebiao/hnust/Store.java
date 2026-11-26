@@ -88,6 +88,22 @@ class Store {
         return sp.getBoolean("demo", false);
     }
 
+    boolean wakeAlarm() {
+        return sp.getBoolean("wake_alarm", true);
+    }
+
+    boolean remindAlarm() {
+        return sp.getBoolean("remind_alarm", true);
+    }
+
+    void setWakeAlarm(boolean on) {
+        sp.edit().putBoolean("wake_alarm", on).apply();
+    }
+
+    void setRemindAlarm(boolean on) {
+        sp.edit().putBoolean("remind_alarm", on).apply();
+    }
+
     boolean remember() {
         return sp.getBoolean("remember", false);
     }

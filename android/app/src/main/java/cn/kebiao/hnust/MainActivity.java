@@ -46,6 +46,13 @@ public class MainActivity extends Activity {
         Diag.init(getFilesDir(), deviceInfo());
         Diag.step("App 启动");
 
+        // 上课闹钟/提醒靠通知送达，Android 13+ 需要运行时授权
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 700);
+        }
+
         Window window = getWindow();
         window.setStatusBarColor(Color.parseColor("#0F5C4C"));
         window.setNavigationBarColor(Color.WHITE);

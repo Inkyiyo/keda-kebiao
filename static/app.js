@@ -443,6 +443,14 @@
     $("#data-source").textContent = isDemo ? "数据源 · 演示" : "数据源 · 教务系统";
     $("#weeks-value").textContent = total;
     $("#api-host").textContent = (s.campus === "xx" ? "xxfw" : "kdfw") + ".hnust.edu.cn";
+    const wakeOn = s.wakeAlarm !== false;
+    const remindOn = s.remindAlarm !== false;
+    $("#wake-switch").classList.toggle("is-on", wakeOn);
+    $("#remind-switch").classList.toggle("is-on", remindOn);
+    $("#wake-desc").textContent = !wakeOn ? "已关闭"
+      : (s.nextWake ? `下一次 ${s.nextWake}` : "提前 55 分钟 · 暂无安排");
+    $("#remind-desc").textContent = !remindOn ? "已关闭"
+      : (s.nextRemind ? `下一次 ${s.nextRemind}` : "提前 30 分钟 · 暂无安排");
   }
 
   async function updateWeeks(delta) {
@@ -603,6 +611,25 @@
       await loadWeek(state.week, { force: true });
       toast("课表已刷新");
     });
+
+    async function toggleAlarm(kind) {
+      const key = kind === "wake" ? "wakeAlarm" : "remindAlarm";
+      const next = !((state.status || {})[key] !== false);
+      try {
+        const res = await api("/api/settings", {
+          method: "POST",
+          body: JSON.stringify({ [key]: next }),
+        });
+        if (!res.ok) throw new Error(res.error || "保存失败");
+        state.status = Object.assign({}, state.status, res);
+        renderMe();
+        toast(next ? "已开启，下一次见「我的」页说明" : "已关闭");
+      } catch (err) {
+        toast(err.message || "保存失败");
+      }
+    }
+    $("#row-wake").addEventListener("click", () => toggleAlarm("wake"));
+    $("#row-remind").addEventListener("click", () => toggleAlarm("remind"));
 
     // App 内用真实版本号，网页版保留默认值
     try {
