@@ -37,6 +37,17 @@
         android:textColor="#43534B"
         android:textSize="14sp" />
 
+    <Chronometer
+        android:id="@+id/w_next_count"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:countDown="true"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#0F5C4C"
+        android:textSize="13sp" />
+
     <TextView
         android:id="@+id/w_next_sub"
         android:layout_width="match_parent"

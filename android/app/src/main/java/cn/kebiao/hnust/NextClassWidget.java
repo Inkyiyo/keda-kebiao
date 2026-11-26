@@ -9,7 +9,6 @@ import android.content.Intent;
 import android.widget.RemoteViews;
 
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 
 /** 桌面小组件：最近的一节课（深绿卡片）。 */
 public class NextClassWidget extends AppWidgetProvider {
@@ -54,28 +53,40 @@ public class NextClassWidget extends AppWidgetProvider {
             views.setTextViewText(R.id.w_next_meta, store.loggedIn() ? "打开 App 刷新一下课表" : "点按打开科大课表登录");
             views.setTextViewText(R.id.w_next_sub, "");
             views.setTextViewText(R.id.w_next_footer, "");
+            views.setViewVisibility(R.id.w_next_count, android.view.View.GONE);
+            views.setViewVisibility(R.id.w_next_sub, android.view.View.VISIBLE);
         } else {
             LocalDateTime now = LocalDateTime.now();
             String label;
-            String sub;
+            LocalDateTime target;
+            String format;
             if (info.ongoing) {
                 label = "正在上课";
-                long mins = ChronoUnit.MINUTES.between(now, LocalDateTime.of(info.date, info.end));
-                sub = "还有 " + humanMins(mins) + "下课";
+                target = LocalDateTime.of(info.date, info.end);
+                format = "还有 %s 下课";
             } else {
                 label = Upcoming.dayLabel(info.date) + "的下一节课";
-                long mins = ChronoUnit.MINUTES.between(now, LocalDateTime.of(info.date, info.start));
-                sub = "还有 " + humanMins(mins) + "上课";
+                target = LocalDateTime.of(info.date, info.start);
+                format = "还有 %s 上课";
             }
             if (!info.location.isEmpty()) {
-                sub += " · " + info.location;
+                format += " · " + info.location;
             }
+            // 倒计时交给系统 Chronometer 每秒走字：精确到秒、不耗电；
+            // 目标点 +5 秒与边界刷新点对齐，归零的同时小组件翻到新状态
+            long targetMs = target.plusSeconds(5)
+                    .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+            long base = android.os.SystemClock.elapsedRealtime()
+                    + (targetMs - System.currentTimeMillis());
+            views.setChronometer(R.id.w_next_count, base, format, true);
+            views.setBoolean(R.id.w_next_count, "setCountDown", true);
+            views.setViewVisibility(R.id.w_next_count, android.view.View.VISIBLE);
+            views.setViewVisibility(R.id.w_next_sub, android.view.View.GONE);
             views.setTextViewText(R.id.w_next_label, label);
             views.setTextViewText(R.id.w_next_name, info.name);
             views.setTextViewText(R.id.w_next_meta,
                     Upcoming.dayLabel(info.date) + " " + Upcoming.hhmm(info.start) + "–" + Upcoming.hhmm(info.end)
                             + (info.teacher.isEmpty() ? "" : " · " + info.teacher));
-            views.setTextViewText(R.id.w_next_sub, sub);
             // 底部一行：今天还剩几节课（或今天的课已上完）
             java.util.List<Upcoming.Info> todayList = Upcoming.dayCourses(store, java.time.LocalDate.now());
             int remaining = 0;
@@ -102,10 +113,4 @@ public class NextClassWidget extends AppWidgetProvider {
         return views;
     }
 
-    private static String humanMins(long mins) {
-        if (mins < 60) return mins + " 分钟";
-        long h = mins / 60;
-        long m = mins % 60;
-        return m == 0 ? h + " 小时" : h + " 小时 " + m + " 分钟";
-    }
 }

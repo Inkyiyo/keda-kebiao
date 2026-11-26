@@ -11,6 +11,7 @@ public class AlarmReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         String action = intent == null ? "" : String.valueOf(intent.getAction());
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+            Widgets.refreshAll(context);
             ClassAlarms.reschedule(context);
             return;
         }
