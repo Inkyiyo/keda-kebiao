@@ -111,13 +111,18 @@
     if (state.loading) return;
     setLoading(true, week ? `正在取第 ${week} 周课表…` : "正在取课表…");
     try {
-      const query = week ? `?week=${week}` : "";
+      const params = [];
+      if (week) params.push(`week=${week}`);
+      if (opts.force) params.push("refresh=1");
+      const query = params.length ? `?${params.join("&")}` : "";
       const data = await api(`/api/curriculum${query}`);
       if (!data.ok) throw Object.assign(new Error(data.error || "取课表失败"), { payload: data });
       state.data = data;
       state.week = data.week;
       renderWeek(data);
       $("#grid-empty").hidden = !data.empty;
+      // 这次显示的是本地缓存：后台静默校对一次，有变化再悄悄换上
+      if (data.stale) revalidate(week, data);
     } catch (err) {
       const payload = err.payload || {};
       if (payload.kind === "expired") {
@@ -130,6 +135,32 @@
       setLoading(false);
     }
     if (opts.after) opts.after();
+  }
+
+  /* 静默校对：强制取一次最新课表，画面没被用户换走且内容有变时才重渲染 */
+  function revalidate(week, painted) {
+    const params = [];
+    if (week) params.push(`week=${week}`);
+    params.push("refresh=1");
+    api(`/api/curriculum?${params.join("&")}`).then((fresh) => {
+      if (!fresh || !fresh.ok) {
+        if (fresh && fresh.kind === "expired" && state.data === painted) {
+          toast("登录状态已过期，请重新登录");
+          showLogin("登录状态已过期，请重新登录");
+        }
+        return;
+      }
+      if (state.data !== painted) return; // 期间用户已翻周/刷新，作废
+      const changed = fresh.week !== painted.week
+        || fresh.currentWeek !== painted.currentWeek
+        || JSON.stringify(fresh.days) !== JSON.stringify(painted.days);
+      state.data = fresh;
+      state.week = fresh.week;
+      if (changed) {
+        renderWeek(fresh);
+        $("#grid-empty").hidden = !fresh.empty;
+      }
+    }).catch(() => { /* 离线就继续用缓存，不打扰 */ });
   }
 
   function renderWeek(data) {
@@ -189,23 +220,58 @@
       return `<div class="day-col${day.today ? " today" : ""}" data-day="${index}">${blocks}</div>`;
     }).join("");
 
-    $("#grid-body").innerHTML = `<div class="time-col">${timeCol}</div>${cols}`;
+    $("#grid-body").innerHTML = `<div id="grid-lines"></div><div id="lunch-band"></div><div class="time-col">${timeCol}<div class="lunch-cell">午休</div></div>${cols}`;
     requestAnimationFrame(layoutCourses);
   }
+
+  const LUNCH_AFTER = 4; // 第 4 节之后是午休
+  const BREAK_H = 18;    // 午休带高度（px）
 
   function layoutCourses() {
     const body = $("#grid-body");
     if (!body || !state.data) return;
     const height = body.clientHeight;
     if (!height) return;
-    const rowH = height / 12;
+    const rowH = (height - BREAK_H) / 12;
+    // 第 sec 节（1 起）顶部的 y 坐标：第 5 节起要跳过午休带
+    const yOf = (sec) => (sec - 1) * rowH + (sec > LUNCH_AFTER ? BREAK_H : 0);
+
+    body.querySelectorAll(".time-cell").forEach((el, i) => {
+      el.style.top = `${yOf(i + 1)}px`;
+      el.style.height = `${rowH}px`;
+    });
+    const lunchCell = body.querySelector(".lunch-cell");
+    if (lunchCell) {
+      lunchCell.style.top = `${LUNCH_AFTER * rowH}px`;
+      lunchCell.style.height = `${BREAK_H}px`;
+    }
+    const band = body.querySelector("#lunch-band");
+    if (band) {
+      band.style.top = `${LUNCH_AFTER * rowH}px`;
+      band.style.height = `${BREAK_H}px`;
+    }
+    // 横线按真实行界生成（含午休带上下沿），替代原来均分的渐变线
+    const lines = body.querySelector("#grid-lines");
+    if (lines) {
+      const bounds = [];
+      for (let s = 2; s <= 12; s += 1) bounds.push(yOf(s));
+      bounds.push(LUNCH_AFTER * rowH + BREAK_H);
+      const stops = [];
+      bounds.sort((a, b) => a - b).forEach((y) => {
+        const yy = Math.round(y);
+        stops.push(`transparent ${yy}px`, `rgba(31,42,38,.07) ${yy}px`,
+          `rgba(31,42,38,.07) ${yy + 1}px`, `transparent ${yy + 1}px`);
+      });
+      lines.style.background = `linear-gradient(to bottom, ${stops.join(",")})`;
+    }
+
     const firstCol = body.querySelector(".day-col");
     const colW = firstCol ? firstCol.clientWidth : 48;
     body.querySelectorAll(".course").forEach((el) => {
       const start = Number(el.dataset.start);
       const end = Number(el.dataset.end);
-      const top = (start - 1) * rowH + 2;
-      const h = Math.max(rowH - 4, (end - start + 1) * rowH - 5);
+      const top = yOf(start) + 2;
+      const h = Math.max(rowH - 4, (yOf(end) + rowH) - yOf(start) - 5);
       el.style.top = `${top}px`;
       el.style.height = `${h}px`;
       el.style.opacity = "1";
@@ -494,7 +560,7 @@
       }
       loadWeek(null);
     });
-    $("#refresh-btn").addEventListener("click", () => loadWeek(state.week));
+    $("#refresh-btn").addEventListener("click", () => loadWeek(state.week, { force: true }));
 
     $("#prev-week").addEventListener("click", () => stepWeek(-1));
     $("#next-week").addEventListener("click", () => stepWeek(1));
@@ -526,7 +592,7 @@
 
     $("#row-refresh").addEventListener("click", async () => {
       state.courses = null;
-      await loadWeek(state.week);
+      await loadWeek(state.week, { force: true });
       toast("课表已刷新");
     });
 

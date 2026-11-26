@@ -305,27 +305,30 @@ b, strong { font-weight: 600; }
   padding: 1px 5px; font-weight: 500;
 }
 
-.grid-body { flex: 1; display: flex; min-height: 0; }
+.grid-body { flex: 1; display: flex; min-height: 0; position: relative; }
+#grid-lines { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+#lunch-band {
+  position: absolute; left: 0; right: 0; pointer-events: none; z-index: 2;
+  background: repeating-linear-gradient(45deg, rgba(31,42,38,.055) 0 5px, rgba(31,42,38,.015) 5px 10px);
+}
 
-.time-col { width: 32px; flex: none; display: flex; flex-direction: column; }
+.time-col { width: 32px; flex: none; display: flex; flex-direction: column; position: relative; }
 .time-cell {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  border-bottom: 1px dashed var(--line-soft); gap: 1px; padding-top: 4px;
+  position: absolute; left: 0; right: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  gap: 1px; padding-top: 4px;
 }
 .time-cell b { font-size: 11px; font-weight: 500; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .time-cell i { font-size: 8.5px; font-style: normal; color: #9AA39E; letter-spacing: -.02em; }
+.lunch-cell {
+  position: absolute; left: 0; right: 0; z-index: 3;
+  display: grid; place-items: center;
+  font-size: 8.5px; color: #8A938E; letter-spacing: .18em;
+}
 
 .day-col { flex: 1; min-width: 0; position: relative; border-left: 1px solid var(--line-soft); }
 .day-col:last-child { border-right: none; }
 .day-col.today { background: rgba(16, 88, 75, .035); }
-.day-col::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: repeating-linear-gradient(to bottom,
-      rgba(0, 0, 0, 0) 0,
-      rgba(0, 0, 0, 0) calc(100% / 12 - 1px),
-      var(--line-soft) calc(100% / 12 - 1px),
-      var(--line-soft) calc(100% / 12));
-}
 
 .course {
   position: absolute; left: 2.5px; right: 2.5px;

@@ -754,7 +754,16 @@ def normalize_curriculum(payload: dict, wanted_week: int | None = None) -> dict:
     days = []
     for index in range(day_total):
         date_info = dates[index] if index < len(dates) else {}
-        courses = sorted(per_day[index], key=lambda c: (c["start"], c["name"]))
+        expanded: list[dict] = []
+        for c in per_day[index]:
+            if c["start"] <= 4 and c["end"] >= 5:
+                # 跨午休的课拆成上下两块，中间留给午休带
+                morning = dict(c, end=4)
+                afternoon = dict(c, start=5)
+                expanded.extend([morning, afternoon])
+            else:
+                expanded.append(c)
+        courses = sorted(expanded, key=lambda c: (c["start"], c["name"]))
         days.append({
             "date": _clean(date_info.get("mxrq")),
             "weekday": _clean(date_info.get("xqmc")) or (
@@ -765,13 +774,14 @@ def normalize_curriculum(payload: dict, wanted_week: int | None = None) -> dict:
 
 
 def _merge_adjacent(courses: list[dict]) -> list[dict]:
-    """同名同地点、节次相连的课合并成一整块（如 3-4 节 + 5-6 节）。"""
+    """同名同地点、节次相连的课合并成一整块；第 4、5 节隔着午休，不合并。"""
     merged: list[dict] = []
     for course in courses:
         last = merged[-1] if merged else None
         if (last and last["name"] == course["name"]
                 and last["location"] == course["location"]
-                and course["start"] <= last["end"] + 1):
+                and course["start"] <= last["end"] + 1
+                and not (last["end"] == 4 and course["start"] == 5)):
             last["end"] = max(last["end"], course["end"])
             if course["teacher"] and course["teacher"] not in last["teacher"]:
                 last["teacher"] = (last["teacher"] + " / " + course["teacher"]).strip(" /")

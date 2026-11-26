@@ -1083,7 +1083,25 @@ public class HnustClient {
         for (int i = 0; i < dayCount; i++) {
             JSONObject dateInfo = dates != null && i < dates.length() ? dates.optJSONObject(i) : null;
             if (dateInfo == null) dateInfo = new JSONObject();
-            List<JSONObject> parsed = perDay.get(i);
+            List<JSONObject> parsed = new ArrayList<>();
+            for (JSONObject c : perDay.get(i)) {
+                int cs = c.optInt("start"), ce = c.optInt("end");
+                if (cs <= 4 && ce >= 5) {
+                    // 跨午休的课拆成上下两块，中间留给午休带
+                    try {
+                        JSONObject morning = new JSONObject(c.toString());
+                        morning.put("end", 4);
+                        JSONObject afternoon = new JSONObject(c.toString());
+                        afternoon.put("start", 5);
+                        parsed.add(morning);
+                        parsed.add(afternoon);
+                    } catch (Exception ignored) {
+                        parsed.add(c);
+                    }
+                } else {
+                    parsed.add(c);
+                }
+            }
             java.util.Collections.sort(parsed, (a, b) -> {
                 int sa = a.optInt("start"), sb = b.optInt("start");
                 if (sa != sb) return Integer.compare(sa, sb);
@@ -1113,7 +1131,9 @@ public class HnustClient {
                 JSONObject last = merged.get(merged.size() - 1);
                 boolean same = last.optString("name").equals(course.optString("name"))
                         && last.optString("location").equals(course.optString("location"))
-                        && course.optInt("start") <= last.optInt("end") + 1;
+                        && course.optInt("start") <= last.optInt("end") + 1
+                        // 第 4、5 节之间隔着午休，不合并成一整块
+                        && !(last.optInt("end") == 4 && course.optInt("start") == 5);
                 if (same) {
                     last.put("end", Math.max(last.optInt("end"), course.optInt("end")));
                     String teacher = course.optString("teacher");

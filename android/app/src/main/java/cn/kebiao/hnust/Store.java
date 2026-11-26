@@ -187,6 +187,32 @@ class Store {
             editor.putBoolean("remember", false).remove(KEY_PWD);
         }
         editor.apply();
+        clearWeekCaches();
+    }
+
+    // ---------------- 课表本地缓存（先显示缓存，再静默校对） ---------------- //
+    String weekCache(int week) {
+        return sp.getString("weekcache_" + week, "");
+    }
+
+    void putWeekCache(int week, String json) {
+        sp.edit().putString("weekcache_" + week, json).apply();
+    }
+
+    int lastCachedWeek() {
+        return sp.getInt("last_cached_week", 0);
+    }
+
+    void setLastCachedWeek(int week) {
+        sp.edit().putInt("last_cached_week", week).apply();
+    }
+
+    void clearWeekCaches() {
+        SharedPreferences.Editor editor = sp.edit();
+        for (String key : sp.getAll().keySet()) {
+            if (key.startsWith("weekcache_")) editor.remove(key);
+        }
+        editor.remove("last_cached_week").apply();
     }
 
     // ---------------- 密码 ---------------- //

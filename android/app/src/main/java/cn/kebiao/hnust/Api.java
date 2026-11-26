@@ -280,6 +280,32 @@ class Api {
             return data;
         }
 
+        // 本地缓存先行：内存里有过期副本、或磁盘上有上次的整周数据，
+        // 先原样返回并标 stale，前端渲染后会静默发一次强制刷新校对。
+        if (!force) {
+            if (weeks.containsKey(key)) {
+                try {
+                    JSONObject copy = new JSONObject(weeks.get(key).toString());
+                    copy.put("stale", true);
+                    return copy;
+                } catch (Exception ignored) {
+                }
+            }
+            int pkey = key != 0 ? key : store.lastCachedWeek();
+            if (pkey > 0) {
+                String json = store.weekCache(pkey);
+                if (!json.isEmpty()) {
+                    try {
+                        JSONObject cached = new JSONObject(json);
+                        cached.put("stale", true);
+                        Diag.step("课表 week=" + pkey + " 命中本地缓存，先显示后校对");
+                        return cached;
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+
         JSONObject data = null;
         for (int attempt = 1; attempt <= 2; attempt++) {
             HnustClient client = new HnustClient(store.campus());
@@ -325,6 +351,12 @@ class Api {
         cachePut(key, shaped, now);
         int real = data.optInt("week", 0);
         if (real > 0 && real != key) cachePut(real, shaped, now);
+        // 落盘：下次打开先显示这份缓存，再静默校对
+        int persistKey = real > 0 ? real : key;
+        if (persistKey > 0) {
+            store.putWeekCache(persistKey, shaped.toString());
+            store.setLastCachedWeek(persistKey);
+        }
         return shaped;
     }
 
@@ -336,6 +368,7 @@ class Api {
     private void cacheClear() {
         weeks.clear();
         stamps.clear();
+        store.clearWeekCaches();
     }
 
     private JSONObject shape(JSONObject data, int week) {
