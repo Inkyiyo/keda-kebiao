@@ -464,7 +464,44 @@ class Api {
         // 每次拿到课表都顺手重排一次上课闹钟、刷新桌面小组件（本地计算，很便宜）
         ClassAlarms.reschedule(appCtx);
         Widgets.refreshAll(appCtx);
+        // 后台把整学期课表全部预缓存，之后翻任何一周都不用等网络
+        warmAllWeeks();
         return result;
+    }
+
+    private final java.util.concurrent.atomic.AtomicBoolean warming =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 后台把第 1 周到最后一周的课表全部拉下来落盘（已缓存的跳过），只跑一遍。 */
+    private void warmAllWeeks() {
+        if (!store.loggedIn() || store.demo()) return;
+        if (!warming.compareAndSet(false, true)) return;
+        Thread thread = new Thread(() -> {
+            try {
+                int total = store.totalWeeks();
+                int fetched = 0;
+                for (int w = 1; w <= total; w++) {
+                    if (!store.weekCache(w).isEmpty()) continue;
+                    try {
+                        fetchWeek(w, false);
+                        fetched++;
+                        Thread.sleep(120);
+                    } catch (HnustClient.ApiError e) {
+                        if ("expired".equals(e.kind)) break;
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (fetched > 0) {
+                    Diag.step("整学期课表预缓存完成，新拉 " + fetched + " 周");
+                    ClassAlarms.reschedule(appCtx);
+                    Widgets.refreshAll(appCtx);
+                }
+            } finally {
+                warming.set(false);
+            }
+        }, "warm-weeks");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private JSONObject courses(Map<String, String> params) {

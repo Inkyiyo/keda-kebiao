@@ -20,9 +20,11 @@ public class TodayWidget extends AppWidgetProvider {
 
     private static final int BRAND = Color.rgb(0x0F, 0x5C, 0x4C);
     private static final int TEXT = Color.rgb(0x14, 0x24, 0x1F);
-    private static final int ROW_H = 33;      // 每行约 33dp（15sp 字 + 上下 6dp）
-    private static final int CHROME = 58;     // 内边距 32 + 标题行约 26
+    private static final int ROW_H = 35;      // 每行约 35dp（15sp 字 + 上下 7dp）
+    private static final int CHROME = 62;     // 内边距 32 + 标题行约 30
     private static final int FOOTER_H = 30;   // 分隔线 + 明天预告约 30
+    // 启动器上报的高度含格子内边距和下方名称标签，实测要扣掉约 44dp 才是卡片真实高度
+    private static final int LAUNCHER_RESERVE = 44;
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] appWidgetIds) {
@@ -54,7 +56,9 @@ public class TodayWidget extends AppWidgetProvider {
         }
     }
 
-    static RemoteViews build(Context context, int maxHeightDp) {
+    static RemoteViews build(Context context, int reportedHeightDp) {
+        int maxHeightDp = reportedHeightDp > 0
+                ? Math.max(0, reportedHeightDp - LAUNCHER_RESERVE) : 0;
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_today);
         Store store = new Store(context);
         LocalDate today = LocalDate.now();

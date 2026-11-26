@@ -90,9 +90,10 @@ public class NextClassWidget extends AppWidgetProvider {
             }
             views.setTextViewText(R.id.w_next_footer, footer);
         }
-        // 矮尺寸下藏掉底部一行，避免文字被裁
+        // 矮尺寸下藏掉底部一行，避免文字被裁（上报高度含启动器预留，先扣掉）
+        int effective = maxHeightDp > 0 ? maxHeightDp - 44 : 0;
         views.setViewVisibility(R.id.w_next_footer,
-                maxHeightDp > 0 && maxHeightDp < 165 ? android.view.View.GONE : android.view.View.VISIBLE);
+                effective > 0 && effective < 170 ? android.view.View.GONE : android.view.View.VISIBLE);
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(context, 4201, open,
