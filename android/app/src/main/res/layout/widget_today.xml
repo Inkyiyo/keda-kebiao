@@ -46,12 +46,13 @@
         android:textSize="14sp"
         android:visibility="gone" />
 
-    <View
+    <!-- RemoteViews 不允许裸 <View>，占位/分隔一律用空 TextView -->
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />
 
-    <View
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#EDF0EC" />

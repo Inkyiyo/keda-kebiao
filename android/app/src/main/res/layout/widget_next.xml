@@ -47,7 +47,8 @@
         android:textColor="#0F5C4C"
         android:textSize="13sp" />
 
-    <View
+    <!-- RemoteViews 不允许裸 <View>，占位/分隔一律用空 TextView -->
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />
