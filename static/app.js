@@ -265,8 +265,6 @@
       lines.style.background = `linear-gradient(to bottom, ${stops.join(",")})`;
     }
 
-    const firstCol = body.querySelector(".day-col");
-    const colW = firstCol ? firstCol.clientWidth : 48;
     body.querySelectorAll(".course").forEach((el) => {
       const start = Number(el.dataset.start);
       const end = Number(el.dataset.end);
@@ -278,8 +276,6 @@
       const tight = h < rowH * 2.6;
       el.classList.toggle("is-tight", tight);
       el.classList.toggle("is-tiny", h < rowH * 1.45);
-      // 列太窄时，两节以内的块放不下「课程名 + 地点」，只留课程名
-      el.classList.toggle("is-narrow", tight && colW < 46);
     });
   }
 
@@ -400,17 +396,29 @@
 
     $("#course-list").innerHTML = list.map((course) => {
       const c = colorOf(course.name);
-      const slots = course.slots
-        .map((s) => `周${s.weekday} ${s.start}${s.end !== s.start ? `-${s.end}` : ""} 节`)
-        .join(" · ");
-      const teacher = course.teacher || "教师未填";
-      const room = course.location ? ` · ${course.location}` : "";
+      const teachers = course.teachers && course.teachers.length
+        ? (course.teachers.length <= 3
+          ? course.teachers.join("、")
+          : `${course.teachers.slice(0, 2).join("、")} 等 ${course.teachers.length} 位老师`)
+        : (course.teacher || "教师未填");
+      const multiTeacher = (course.teachers || []).length > 1;
+      const slotLines = (course.slots || []).map((s) => {
+        const bits = [`周${s.weekday} ${s.start}${s.end !== s.start ? `-${s.end}` : ""} 节`];
+        if (multiTeacher && s.teacher) bits.push(s.teacher);
+        if (s.location) bits.push(s.location);
+        return escapeHtml(bits.join(" · "));
+      }).join("<br>");
+      const total = course.totalSections || 0;
+      const done = course.doneSections || 0;
+      const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
       return `<div class="course-item" style="--c-bg:${c.bg}">
           <span class="dot" style="background:${c.bar}"></span>
           <div class="info">
             <h4>${escapeHtml(course.name)}</h4>
-            <p class="meta">${escapeHtml(teacher)}${escapeHtml(room)}</p>
-            <p class="meta">${escapeHtml(slots)}</p>
+            <p class="meta">${escapeHtml(teachers)}</p>
+            <p class="meta">${slotLines}</p>
+            <p class="meta">共 ${total} 节 · 已上 ${done} 节</p>
+            <div class="c-prog"><i style="width:${pct}%"></i></div>
           </div>
           <span class="stat">${course.count} 周</span>
         </div>`;

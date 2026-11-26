@@ -478,9 +478,16 @@ class Api {
     }
 
     private void mergeAggregate(JSONObject out, int end) {
-        Map<String, JSONObject> aggregated = new LinkedHashMap<>();
-        Map<String, Map<String, Boolean>> slots = new HashMap<>();
+        // 按课程名聚合：同名课哪怕老师、教室不同也合成一张卡，
+        // 每种上课安排（星期+节次+老师+教室）记成一个 slot，各自带出现周数；
+        // 同时统计总节数与已上节数（按日期 + 末节下课时间判断）。
+        Map<String, JSONObject> byName = new LinkedHashMap<>();
+        Map<String, Map<String, JSONObject>> slotMaps = new HashMap<>();
+        Map<String, List<String>> teacherLists = new HashMap<>();
         Map<String, List<Integer>> weekList = new HashMap<>();
+        Map<String, int[]> totals = new HashMap<>();
+        List<String[]> sectionRows = store.sections();
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
 
         for (int week = 1; week <= end; week++) {
             JSONObject data = weeks.get(week);
@@ -492,62 +499,84 @@ class Api {
                 if (day == null) continue;
                 JSONArray list = day.optJSONArray("courses");
                 if (list == null) continue;
+                String date = day.optString("date", "");
                 for (int j = 0; j < list.length(); j++) {
                     JSONObject course = list.optJSONObject(j);
                     if (course == null) continue;
                     String name = course.optString("name");
+                    if (name.isEmpty()) continue;
                     String teacher = course.optString("teacher");
                     String location = course.optString("location");
-                    String key = name + "\u0001" + teacher + "\u0001" + location;
-                    if (!aggregated.containsKey(key)) {
-                        JSONObject item = new JSONObject();
+                    int startSec = course.optInt("start");
+                    int endSec = course.optInt("end");
+                    int span = Math.max(1, endSec - startSec + 1);
+
+                    JSONObject item = byName.get(name);
+                    if (item == null) {
+                        item = new JSONObject();
                         try {
                             item.put("name", name);
-                            item.put("teacher", teacher);
-                            item.put("location", location);
                         } catch (Exception ignored) {
                         }
-                        aggregated.put(key, item);
-                        slots.put(key, new LinkedHashMap<>());
-                        weekList.put(key, new ArrayList<>());
+                        byName.put(name, item);
+                        slotMaps.put(name, new LinkedHashMap<>());
+                        teacherLists.put(name, new ArrayList<>());
+                        weekList.put(name, new ArrayList<>());
+                        totals.put(name, new int[]{0, 0});
                     }
-                    String slotKey = day.optString("weekday") + "|" + course.optInt("start") + "|" + course.optInt("end");
-                    Map<String, Boolean> slotMap = slots.get(key);
-                    if (!slotMap.containsKey(slotKey)) {
-                        slotMap.put(slotKey, true);
-                        JSONObject slot = new JSONObject();
+                    List<String> teachers = teacherLists.get(name);
+                    if (!teacher.isEmpty() && !teachers.contains(teacher)) teachers.add(teacher);
+                    List<Integer> ws = weekList.get(name);
+                    if (!ws.contains(week)) ws.add(week);
+
+                    String slotKey = day.optString("weekday") + "|" + startSec + "|" + endSec
+                            + "|" + teacher + "|" + location;
+                    Map<String, JSONObject> slotMap = slotMaps.get(name);
+                    JSONObject slot = slotMap.get(slotKey);
+                    if (slot == null) {
+                        slot = new JSONObject();
                         try {
                             slot.put("weekday", day.optString("weekday"));
-                            slot.put("start", course.optInt("start"));
-                            slot.put("end", course.optInt("end"));
+                            slot.put("start", startSec);
+                            slot.put("end", endSec);
+                            slot.put("teacher", teacher);
+                            slot.put("location", location);
+                            slot.put("weeks", 0);
                         } catch (Exception ignored) {
                         }
-                        if (!aggregated.get(key).has("slots")) {
-                            try {
-                                aggregated.get(key).put("slots", new JSONArray());
-                            } catch (Exception ignored) {
-                            }
-                        }
-                        JSONArray slotArr = aggregated.get(key).optJSONArray("slots");
-                        if (slotArr != null) slotArr.put(slot);
+                        slotMap.put(slotKey, slot);
                     }
-                    List<Integer> list2 = weekList.get(key);
-                    if (!list2.contains(week)) list2.add(week);
+                    try {
+                        slot.put("weeks", slot.optInt("weeks") + 1);
+                    } catch (Exception ignored) {
+                    }
+
+                    int[] tot = totals.get(name);
+                    tot[0] += span;
+                    if (isDone(date, endSec, sectionRows, now)) tot[1] += span;
                 }
             }
         }
 
-        List<JSONObject> items = new ArrayList<>(aggregated.values());
+        List<JSONObject> items = new ArrayList<>(byName.values());
         for (JSONObject item : items) {
+            String name = item.optString("name");
             try {
-                String key = item.optString("name") + "\u0001" + item.optString("teacher")
-                        + "\u0001" + item.optString("location");
-                List<Integer> ws = weekList.get(key);
-                if (ws == null) ws = new ArrayList<>();
-                JSONArray arr = new JSONArray();
-                for (Integer w : ws) arr.put(w);
-                item.put("weeks", arr);
+                JSONArray tArr = new JSONArray();
+                for (String t : teacherLists.get(name)) tArr.put(t);
+                item.put("teachers", tArr);
+                JSONArray sArr = new JSONArray();
+                for (JSONObject s : slotMaps.get(name).values()) sArr.put(s);
+                item.put("slots", sArr);
+                List<Integer> ws = weekList.get(name);
+                java.util.Collections.sort(ws);
+                JSONArray wArr = new JSONArray();
+                for (Integer w : ws) wArr.put(w);
+                item.put("weeks", wArr);
                 item.put("count", ws.size());
+                int[] tot = totals.get(name);
+                item.put("totalSections", tot[0]);
+                item.put("doneSections", tot[1]);
             } catch (Exception ignored) {
             }
         }
@@ -561,6 +590,23 @@ class Api {
         try {
             out.put("courses", arr);
         } catch (Exception ignored) {
+        }
+    }
+
+    /** 这次课上完了没有：日期已过，或当天且末节下课时间已过。 */
+    private boolean isDone(String date, int endSection, List<String[]> sectionRows,
+                           java.time.LocalDateTime now) {
+        try {
+            java.time.LocalDate d = java.time.LocalDate.parse(date);
+            if (d.isBefore(now.toLocalDate())) return true;
+            if (d.isAfter(now.toLocalDate())) return false;
+            if (endSection >= 1 && endSection <= sectionRows.size()) {
+                java.time.LocalTime t = java.time.LocalTime.parse(sectionRows.get(endSection - 1)[1]);
+                return t.isBefore(now.toLocalTime());
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
         }
     }
 

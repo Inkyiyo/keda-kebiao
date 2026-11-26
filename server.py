@@ -423,38 +423,76 @@ def api_courses(start: int = 1, end: int = 0, limit: int = 4):
                "next": cur, "done": cur > end, "total": end})
 
 
+def _course_done(date_text: str, end_section: int, sections: list, now: dt.datetime) -> bool:
+    """这次课上完了没有：日期已过，或当天且末节下课时间已过。"""
+    try:
+        d = dt.date.fromisoformat(date_text)
+    except (TypeError, ValueError):
+        return False
+    if d < now.date():
+        return True
+    if d > now.date():
+        return False
+    if 1 <= end_section <= len(sections):
+        try:
+            t = dt.time.fromisoformat(str(sections[end_section - 1].get("end", "")))
+            return t < now.time()
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
 def _aggregate(end: int) -> dict:
-    aggregated: dict[tuple, dict] = {}
+    # 按课程名聚合：同名课哪怕老师、教室不同也合成一张卡，
+    # 每种上课安排（星期+节次+老师+教室）记成一个 slot；
+    # 同时统计总节数与已上节数。
+    aggregated: dict[str, dict] = {}
+    now = dt.datetime.now()
     for week in range(1, end + 1):
         cached = _wcache.get(week)
         if not cached:
             continue
-        for day in cached[1]["days"]:
+        shaped = cached[1]
+        sections = shaped.get("sections") or []
+        for day in shaped["days"]:
             for course in day["courses"]:
-                key = (course["name"], course["teacher"], course["location"])
-                entry = aggregated.setdefault(key, {
+                entry = aggregated.setdefault(course["name"], {
                     "name": course["name"],
-                    "teacher": course["teacher"],
-                    "location": course["location"],
+                    "teachers": [],
                     "slots": {},
                     "weeks": set(),
+                    "totalSections": 0,
+                    "doneSections": 0,
                 })
-                entry["slots"][(day["weekday"], course["start"], course["end"])] = True
+                if course["teacher"] and course["teacher"] not in entry["teachers"]:
+                    entry["teachers"].append(course["teacher"])
+                skey = (day["weekday"], course["start"], course["end"],
+                        course["teacher"], course["location"])
+                slot = entry["slots"].setdefault(skey, {
+                    "weekday": skey[0], "start": skey[1], "end": skey[2],
+                    "teacher": skey[3], "location": skey[4], "weeks": 0,
+                })
+                slot["weeks"] += 1
                 entry["weeks"].add(week)
+                span = max(1, course["end"] - course["start"] + 1)
+                entry["totalSections"] += span
+                if _course_done(day.get("date", ""), course["end"], sections, now):
+                    entry["doneSections"] += span
 
     items = []
     for entry in aggregated.values():
-        slots = [{"weekday": k[0], "start": k[1], "end": k[2]} for k in
-                 sorted(entry["slots"],
-                        key=lambda x: (WEEKDAY_ORDER.index(x[0])
-                                       if x[0] in WEEKDAY_ORDER else 9, x[1]))]
+        slots = sorted(entry["slots"].values(),
+                       key=lambda s: (WEEKDAY_ORDER.index(s["weekday"])
+                                      if s["weekday"] in WEEKDAY_ORDER else 9,
+                                      s["start"], s["teacher"]))
         items.append({
             "name": entry["name"],
-            "teacher": entry["teacher"],
-            "location": entry["location"],
+            "teachers": entry["teachers"],
             "slots": slots,
             "weeks": sorted(entry["weeks"]),
             "count": len(entry["weeks"]),
+            "totalSections": entry["totalSections"],
+            "doneSections": entry["doneSections"],
         })
     items.sort(key=lambda x: (-x["count"], x["name"]))
     return {"courses": items}
