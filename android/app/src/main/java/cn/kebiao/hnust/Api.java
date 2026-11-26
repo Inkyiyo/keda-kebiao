@@ -461,8 +461,9 @@ class Api {
         }
         boolean force = "1".equals(params.get("refresh"));
         JSONObject result = fetchWeek(week, force);
-        // 每次拿到课表都顺手重排一次上课闹钟（本地计算，很便宜）
+        // 每次拿到课表都顺手重排一次上课闹钟、刷新桌面小组件（本地计算，很便宜）
         ClassAlarms.reschedule(appCtx);
+        Widgets.refreshAll(appCtx);
         return result;
     }
 

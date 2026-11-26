@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">科大课表</string>
+    <string name="widget_next_desc">最近的一节课：课程、时间和地点</string>
+    <string name="widget_today_desc">今天的全部课程</string>
 </resources>
