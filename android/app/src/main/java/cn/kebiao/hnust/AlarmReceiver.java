@@ -15,6 +15,13 @@ public class AlarmReceiver extends BroadcastReceiver {
             ClassAlarms.reschedule(context);
             return;
         }
+        if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            // 覆盖安装新版后、还没打开过 App 时：先把小组件刷成新状态，
+            // 再把闹钟和边界刷新点全部重新排上（安装本身不会触发这些）
+            Widgets.refreshAll(context);
+            ClassAlarms.reschedule(context);
+            return;
+        }
         if (ClassAlarms.ACTION_FIRE.equals(action)) {
             boolean morning = intent.getBooleanExtra("morning", true);
             ClassAlarms.fire(context, morning,
