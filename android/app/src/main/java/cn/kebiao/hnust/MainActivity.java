@@ -102,6 +102,20 @@ public class MainActivity extends Activity {
         web.loadUrl("file:///android_asset/index.html");
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ClassAlarms.appForeground = true;
+        // 回到前台时把闹钟/系统时钟叫醒/小组件刷新点都对齐一次
+        ClassAlarms.reschedule(this);
+    }
+
+    @Override
+    protected void onPause() {
+        ClassAlarms.appForeground = false;
+        super.onPause();
+    }
+
     private void openOutside(Uri uri) {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, uri));

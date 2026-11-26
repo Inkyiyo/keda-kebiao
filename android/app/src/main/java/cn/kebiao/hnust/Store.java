@@ -104,6 +104,15 @@ class Store {
         sp.edit().putBoolean("remind_alarm", on).apply();
     }
 
+    /** 已设进系统时钟的叫醒闹钟的触发点（"yyyy-MM-dd HH:mm"），空 = 没设过。 */
+    String sysAlarmStamp() {
+        return sp.getString("sys_alarm_stamp", "");
+    }
+
+    void setSysAlarmStamp(String stamp) {
+        sp.edit().putString("sys_alarm_stamp", stamp == null ? "" : stamp).apply();
+    }
+
     boolean remember() {
         return sp.getBoolean("remember", false);
     }

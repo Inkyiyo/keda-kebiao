@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.net.Uri;
+import android.provider.AlarmClock;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -18,6 +19,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -37,6 +39,11 @@ class ClassAlarms {
     static final String CH_REMIND = "class_remind";
     static final int WAKE_LEAD_MIN = 55;
     static final int REMIND_LEAD_MIN = 30;
+
+    /** MainActivity 是否在前台：在系统时钟里设闹钟要发 Activity 意图，只在前台同步才稳。 */
+    static volatile boolean appForeground = false;
+
+    private static final DateTimeFormatter STAMP_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     static class Next {
         LocalDateTime trigger;
@@ -138,6 +145,8 @@ class ClassAlarms {
         } catch (Exception e) {
             Diag.error("排上课闹钟失败：" + e.getMessage());
         }
+        // 在前台时顺手把叫醒闹钟同步进系统时钟（后台发 Activity 意图不可靠）
+        if (appForeground) syncSystemWake(ctx);
         // 小组件的下一个刷新点跟着一起排
         WidgetClock.scheduleNext(ctx);
     }
@@ -167,9 +176,84 @@ class ClassAlarms {
             intent.putExtra("course", next.courseName);
             intent.putExtra("location", next.location);
             intent.putExtra("classTime", hhmm(next.classAt));
+            if (morning) intent.putExtra("stamp", stampOf(next));
         }
         return PendingIntent.getBroadcast(ctx, req, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    // ------------------------------------------------------------------ //
+    // 系统时钟里的叫醒闹钟
+    // ------------------------------------------------------------------ //
+    static String stampOf(Next next) {
+        return next.trigger.format(STAMP_FMT);
+    }
+
+    /**
+     * 把下一次叫醒同步进系统时钟 App（ACTION_SET_ALARM 静默设置），时钟的原生
+     * 响铃比通知可靠。已设的触发点记在 Store.sysAlarmStamp 里防重复设置；
+     * 时间变了先尽力用 ACTION_DISMISS_ALARM 撤旧的（OEM 时钟不一定支持，
+     * 撤不掉的靠「我的」页提示用户手动删）。AlarmManager 的叫醒仍照常排着
+     * 做兜底：若系统闹钟已覆盖同一个触发点，它的通知会被 AlarmReceiver 跳过。
+     */
+    static void syncSystemWake(Context ctx) {
+        // 只在前台同步：后台 startActivity 可能被系统静默丢弃，若据此记下
+        // 「已设」会误伤兜底通知（该响的不响）。后台调用直接跳过，
+        // 下次打开 App 时会补上；这期间 AlarmManager 的叫醒照常兜底。
+        if (!appForeground) return;
+        try {
+            Store store = new Store(ctx);
+            String stored = store.sysAlarmStamp();
+            Next next = store.wakeAlarm() && store.loggedIn() ? findNext(store, true) : null;
+            String target = next == null ? "" : stampOf(next);
+            if (target.equals(stored)) return;
+            // 目标变了：旧的若还没响，尽力撤掉
+            if (!stored.isEmpty()) {
+                LocalDateTime old = LocalDateTime.parse(stored, STAMP_FMT);
+                if (old.isAfter(LocalDateTime.now())) dismissSystemAlarm(ctx, old);
+                store.setSysAlarmStamp("");
+            }
+            if (next == null) return;
+            if (setSystemAlarm(ctx, next)) {
+                store.setSysAlarmStamp(target);
+                Diag.step("系统叫醒闹钟已设：" + describe(next));
+            }
+        } catch (Exception e) {
+            Diag.error("同步系统叫醒闹钟失败：" + e.getMessage());
+        }
+    }
+
+    private static boolean setSystemAlarm(Context ctx, Next next) {
+        try {
+            Intent intent = new Intent(AlarmClock.ACTION_SET_ALARM);
+            intent.putExtra(AlarmClock.EXTRA_HOUR, next.trigger.getHour());
+            intent.putExtra(AlarmClock.EXTRA_MINUTES, next.trigger.getMinute());
+            intent.putExtra(AlarmClock.EXTRA_MESSAGE,
+                    "起床 · " + (next.courseName.isEmpty() ? "上课" : next.courseName));
+            intent.putExtra(AlarmClock.EXTRA_SKIP_UI, true);
+            intent.putExtra(AlarmClock.EXTRA_VIBRATE, true);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            Diag.error("设置系统闹钟失败：" + e.getMessage());
+            return false;
+        }
+    }
+
+    private static void dismissSystemAlarm(Context ctx, LocalDateTime when) {
+        try {
+            Intent intent = new Intent(AlarmClock.ACTION_DISMISS_ALARM);
+            intent.putExtra(AlarmClock.EXTRA_ALARM_SEARCH_MODE, AlarmClock.ALARM_SEARCH_MODE_TIME);
+            intent.putExtra(AlarmClock.EXTRA_HOUR, when.getHour());
+            intent.putExtra(AlarmClock.EXTRA_MINUTES, when.getMinute());
+            intent.putExtra(AlarmClock.EXTRA_IS_PM, when.getHour() >= 12);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(intent);
+            Diag.step("已尝试撤销旧系统闹钟 " + when.format(STAMP_FMT));
+        } catch (Exception e) {
+            Diag.error("撤销旧系统闹钟失败：" + e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------------ //

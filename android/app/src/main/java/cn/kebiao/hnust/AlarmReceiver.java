@@ -24,11 +24,27 @@ public class AlarmReceiver extends BroadcastReceiver {
         }
         if (ClassAlarms.ACTION_FIRE.equals(action)) {
             boolean morning = intent.getBooleanExtra("morning", true);
-            ClassAlarms.fire(context, morning,
-                    intent.getStringExtra("course"),
-                    intent.getStringExtra("location"),
-                    intent.getStringExtra("classTime"));
+            boolean coveredByClock = false;
+            if (morning) {
+                String stamp = intent.getStringExtra("stamp");
+                String stored = new Store(context).sysAlarmStamp();
+                coveredByClock = stamp != null && !stamp.isEmpty() && stamp.equals(stored);
+            }
+            if (coveredByClock) {
+                // 这个触发点已经设进系统时钟了，时钟会响，App 的通知就不再重复发
+                Diag.step("叫醒由系统时钟负责，本次通知跳过");
+            } else {
+                ClassAlarms.fire(context, morning,
+                        intent.getStringExtra("course"),
+                        intent.getStringExtra("location"),
+                        intent.getStringExtra("classTime"));
+            }
             ClassAlarms.reschedule(context);
+            if (morning) {
+                // 顺手尽力把明天的叫醒同步进系统时钟（后台发意图不一定成功，
+                // 失败也没关系，下次打开 App 时会再同步）
+                ClassAlarms.syncSystemWake(context);
+            }
             return;
         }
         if (WidgetClock.ACTION_TICK.equals(action)) {
