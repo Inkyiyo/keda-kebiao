@@ -1011,11 +1011,15 @@ public class HnustClient {
         JSONObject block = blocks.optJSONObject(0);
         if (block == null) block = new JSONObject();
 
+        // 显式请求了某一周时以请求为准：返回体里的 week 字段是「当前周」，
+        // 无条件采用它会让翻周后标题和周选择器永远停在当前周（v1.0.5 的 bug）。
         Integer week = wantedWeek;
-        String rawWeek = block.optString("week", "");
-        try {
-            if (!rawWeek.isEmpty()) week = (int) Double.parseDouble(rawWeek.replace(".0", ""));
-        } catch (Exception ignored) {
+        if (week == null) {
+            String rawWeek = block.optString("week", "");
+            try {
+                if (!rawWeek.isEmpty()) week = (int) Double.parseDouble(rawWeek.replace(".0", ""));
+            } catch (Exception ignored) {
+            }
         }
         if (week == null) week = 1;
 

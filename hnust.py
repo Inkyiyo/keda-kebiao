@@ -698,7 +698,9 @@ def normalize_curriculum(payload: dict, wanted_week: int | None = None) -> dict:
         raise HnustError("教务系统没有返回课表数据", "server")
 
     block = data[0] or {}
-    week = block.get("week") or wanted_week
+    # 显式请求了某一周时以请求为准：返回体里的 week 是「当前周」，
+    # 采用它会让翻周后周次标称永远停在当前周（与 Java 版同一个 bug）。
+    week = wanted_week if wanted_week is not None else block.get("week")
     try:
         week = int(week)
     except (TypeError, ValueError):
