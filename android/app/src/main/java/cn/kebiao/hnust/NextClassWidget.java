@@ -17,8 +17,20 @@ public class NextClassWidget extends AppWidgetProvider {
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] appWidgetIds) {
         for (int id : appWidgetIds) {
-            manager.updateAppWidget(id, build(context));
+            manager.updateAppWidget(id, build(context, heightOf(manager, id)));
         }
+    }
+
+    @Override
+    public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager,
+                                          int appWidgetId, android.os.Bundle newOptions) {
+        manager.updateAppWidget(appWidgetId,
+                build(context, newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)));
+    }
+
+    private static int heightOf(AppWidgetManager manager, int id) {
+        android.os.Bundle options = manager.getAppWidgetOptions(id);
+        return options == null ? 0 : options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
     }
 
     static void updateAll(Context context) {
@@ -26,13 +38,13 @@ public class NextClassWidget extends AppWidgetProvider {
             AppWidgetManager manager = AppWidgetManager.getInstance(context);
             int[] ids = manager.getAppWidgetIds(new ComponentName(context, NextClassWidget.class));
             for (int id : ids) {
-                manager.updateAppWidget(id, build(context));
+                manager.updateAppWidget(id, build(context, heightOf(manager, id)));
             }
         } catch (Exception ignored) {
         }
     }
 
-    static RemoteViews build(Context context) {
+    static RemoteViews build(Context context, int maxHeightDp) {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_next);
         Store store = new Store(context);
         Upcoming.Info info = store.loggedIn() ? Upcoming.currentOrNext(store) : null;
@@ -78,6 +90,9 @@ public class NextClassWidget extends AppWidgetProvider {
             }
             views.setTextViewText(R.id.w_next_footer, footer);
         }
+        // 矮尺寸下藏掉底部一行，避免文字被裁
+        views.setViewVisibility(R.id.w_next_footer,
+                maxHeightDp > 0 && maxHeightDp < 165 ? android.view.View.GONE : android.view.View.VISIBLE);
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(context, 4201, open,

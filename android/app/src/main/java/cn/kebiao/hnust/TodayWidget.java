@@ -7,6 +7,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.os.Bundle;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -14,17 +15,32 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** 桌面小组件：今日课表（浅色卡片，列出今天全部课）。 */
+/** 桌面小组件：今日课表（浅色卡片）。按小组件的实际高度决定显示几行，绝不裁切。 */
 public class TodayWidget extends AppWidgetProvider {
 
     private static final int BRAND = Color.rgb(0x0F, 0x5C, 0x4C);
     private static final int TEXT = Color.rgb(0x14, 0x24, 0x1F);
+    private static final int ROW_H = 33;      // 每行约 33dp（15sp 字 + 上下 6dp）
+    private static final int CHROME = 58;     // 内边距 32 + 标题行约 26
+    private static final int FOOTER_H = 30;   // 分隔线 + 明天预告约 30
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] appWidgetIds) {
         for (int id : appWidgetIds) {
-            manager.updateAppWidget(id, build(context));
+            manager.updateAppWidget(id, build(context, heightOf(manager, id)));
         }
+    }
+
+    @Override
+    public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager,
+                                          int appWidgetId, Bundle newOptions) {
+        manager.updateAppWidget(appWidgetId,
+                build(context, newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)));
+    }
+
+    private static int heightOf(AppWidgetManager manager, int id) {
+        Bundle options = manager.getAppWidgetOptions(id);
+        return options == null ? 0 : options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
     }
 
     static void updateAll(Context context) {
@@ -32,13 +48,13 @@ public class TodayWidget extends AppWidgetProvider {
             AppWidgetManager manager = AppWidgetManager.getInstance(context);
             int[] ids = manager.getAppWidgetIds(new ComponentName(context, TodayWidget.class));
             for (int id : ids) {
-                manager.updateAppWidget(id, build(context));
+                manager.updateAppWidget(id, build(context, heightOf(manager, id)));
             }
         } catch (Exception ignored) {
         }
     }
 
-    static RemoteViews build(Context context) {
+    static RemoteViews build(Context context, int maxHeightDp) {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_today);
         Store store = new Store(context);
         LocalDate today = LocalDate.now();
@@ -49,12 +65,42 @@ public class TodayWidget extends AppWidgetProvider {
 
         List<Upcoming.Info> list = store.loggedIn() ? Upcoming.dayCourses(store, today) : new java.util.ArrayList<>();
         views.removeAllViews(R.id.w_today_rows);
+
+        // 底部预告（空间不够时先牺牲它）
+        List<Upcoming.Info> tomorrow = store.loggedIn()
+                ? Upcoming.dayCourses(store, today.plusDays(1)) : new java.util.ArrayList<>();
+        views.setTextViewText(R.id.w_today_footer, tomorrow.isEmpty()
+                ? "明天没有课"
+                : "明天第一课 " + Upcoming.hhmm(tomorrow.get(0).start) + " " + tomorrow.get(0).name
+                        + (tomorrow.get(0).location.isEmpty() ? "" : " · " + tomorrow.get(0).location));
+
         if (list.isEmpty()) {
             views.setViewVisibility(R.id.w_today_empty, View.VISIBLE);
             views.setTextViewText(R.id.w_today_empty,
                     store.loggedIn() ? "今天没有课" : "点按打开科大课表登录");
+            views.setViewVisibility(R.id.w_today_footer, View.VISIBLE);
         } else {
             views.setViewVisibility(R.id.w_today_empty, View.GONE);
+            int total = list.size();
+            boolean showFooter = true;
+            int fit = maxHeightDp > 0 ? Math.max(1, (maxHeightDp - CHROME - FOOTER_H) / ROW_H) : total;
+            if (total > fit) {
+                showFooter = false;
+                fit = maxHeightDp > 0 ? Math.max(1, (maxHeightDp - CHROME) / ROW_H) : total;
+            }
+            views.setViewVisibility(R.id.w_today_footer, showFooter ? View.VISIBLE : View.GONE);
+
+            int courseRows;
+            boolean summary = false;
+            if (total <= fit) {
+                courseRows = total;
+            } else if (fit >= 3) {
+                courseRows = fit - 1;   // 最后一行留给「还有 N 节课」
+                summary = true;
+            } else {
+                courseRows = fit;       // 太矮就只放得下的课，不放汇总行
+            }
+
             // 高亮：正在上的那节，其次是下一节
             LocalDateTime now = LocalDateTime.now();
             int highlight = -1;
@@ -65,8 +111,7 @@ public class TodayWidget extends AppWidgetProvider {
                     break;
                 }
             }
-            int max = Math.min(list.size(), 8);
-            for (int i = 0; i < max; i++) {
+            for (int i = 0; i < courseRows; i++) {
                 Upcoming.Info info = list.get(i);
                 RemoteViews row = new RemoteViews(context.getPackageName(), R.layout.widget_row);
                 row.setTextViewText(R.id.w_row_time, Upcoming.hhmm(info.start) + "–" + Upcoming.hhmm(info.end));
@@ -80,21 +125,14 @@ public class TodayWidget extends AppWidgetProvider {
                 }
                 views.addView(R.id.w_today_rows, row);
             }
-            if (list.size() > max) {
+            if (summary) {
                 RemoteViews more = new RemoteViews(context.getPackageName(), R.layout.widget_row);
                 more.setTextViewText(R.id.w_row_time, "");
-                more.setTextViewText(R.id.w_row_name, "还有 " + (list.size() - max) + " 节课，点按查看");
+                more.setTextViewText(R.id.w_row_name, "还有 " + (total - courseRows) + " 节课，点按查看");
                 more.setTextViewText(R.id.w_row_loc, "");
                 views.addView(R.id.w_today_rows, more);
             }
         }
-        // 底部一行：明天第一课预告，卡片拉高时也不空着
-        List<Upcoming.Info> tomorrow = store.loggedIn()
-                ? Upcoming.dayCourses(store, today.plusDays(1)) : new java.util.ArrayList<>();
-        views.setTextViewText(R.id.w_today_footer, tomorrow.isEmpty()
-                ? "明天没有课"
-                : "明天第一课 " + Upcoming.hhmm(tomorrow.get(0).start) + " " + tomorrow.get(0).name
-                        + (tomorrow.get(0).location.isEmpty() ? "" : " · " + tomorrow.get(0).location));
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pi = PendingIntent.getActivity(context, 4202, open,
