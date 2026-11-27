@@ -113,6 +113,15 @@ class Store {
         sp.edit().putString("sys_alarm_stamp", stamp == null ? "" : stamp).apply();
     }
 
+    /** 上次全量校对（所有周强制重拉）完成的时间戳，0 = 从未。 */
+    long lastRevalidateMs() {
+        return sp.getLong("last_revalidate_ms", 0);
+    }
+
+    void setLastRevalidateMs(long ms) {
+        sp.edit().putLong("last_revalidate_ms", ms).apply();
+    }
+
     boolean remember() {
         return sp.getBoolean("remember", false);
     }

@@ -490,6 +490,8 @@ class Api {
         Widgets.refreshAll(appCtx);
         // 后台把整学期课表全部预缓存，之后翻任何一周都不用等网络
         warmAllWeeks();
+        // 再把每一周都和服务器校对一遍（30 分钟内不重复），调课了能自己跟上
+        revalidateAllWeeks();
         return result;
     }
 
@@ -528,7 +530,55 @@ class Api {
         thread.start();
     }
 
+    private static final long REVALIDATE_INTERVAL_MS = 30 * 60 * 1000L;
+
+    /**
+     * 全量校对：把每一周都强制重拉一遍（不只正在看的那周），学校调课后
+     * 缓存和课程统计能自己跟上。30 分钟内不重复跑；课程页手动「重新校对」
+     * 走 courses 接口的 refresh 参数，不受这个间隔限制。
+     */
+    private void revalidateAllWeeks() {
+        if (!store.loggedIn() || store.demo()) return;
+        if (System.currentTimeMillis() - store.lastRevalidateMs() < REVALIDATE_INTERVAL_MS) return;
+        if (!warming.compareAndSet(false, true)) return;
+        Thread thread = new Thread(() -> {
+            try {
+                int total = store.totalWeeks();
+                java.util.Map<Integer, String> before = new java.util.HashMap<>();
+                for (int w = 1; w <= total; w++) before.put(w, store.weekCache(w));
+                int changed = 0;
+                boolean expired = false;
+                for (int w = 1; w <= total; w++) {
+                    try {
+                        fetchWeek(w, true);
+                        if (!store.weekCache(w).equals(before.get(w))) changed++;
+                        Thread.sleep(120);
+                    } catch (HnustClient.ApiError e) {
+                        if ("expired".equals(e.kind)) {
+                            expired = true;
+                            break;
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (!expired) {
+                    store.setLastRevalidateMs(System.currentTimeMillis());
+                    Diag.step("全量校对完成，" + changed + " 周有变化");
+                    if (changed > 0) {
+                        ClassAlarms.reschedule(appCtx);
+                        Widgets.refreshAll(appCtx);
+                    }
+                }
+            } finally {
+                warming.set(false);
+            }
+        }, "revalidate-weeks");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
     private JSONObject courses(Map<String, String> params) {
+        boolean force = "1".equals(params.get("refresh"));
         int total = store.totalWeeks();
         int start = parseInt(params.get("start"), 1);
         int limit = Math.max(1, Math.min(10, parseInt(params.get("limit"), 4)));
@@ -541,7 +591,7 @@ class Api {
         int done = 0;
         while (cur <= end && done < limit) {
             try {
-                fetchWeek(cur, false);
+                fetchWeek(cur, force);
             } catch (HnustClient.ApiError e) {
                 JSONObject out = fail(e.message, e.kind);
                 mergeAggregate(out, end);
@@ -566,6 +616,11 @@ class Api {
             out.put("done", cur > end);
             out.put("total", end);
         } catch (Exception ignored) {
+        }
+        if (force && cur > end) {
+            // 手动全量校对走完，自动校对的计时跟着重置
+            store.setLastRevalidateMs(System.currentTimeMillis());
+            Diag.step("课程页手动重新校对完成");
         }
         return out;
     }

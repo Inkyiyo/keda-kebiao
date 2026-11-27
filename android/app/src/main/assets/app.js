@@ -331,7 +331,7 @@
   }
 
   /* ---------------- 课程汇总 ---------------- */
-  async function loadCourses(scanAll) {
+  async function loadCourses(scanAll, force) {
     if (state.scanning) return;
     if (!scanAll && state.courses) return renderCourses();
 
@@ -346,18 +346,21 @@
     try {
       let cursor = 1;
       while (cursor <= total) {
-        const res = await api(`/api/courses?start=${cursor}&end=${total}&limit=4`);
+        const res = await api(`/api/courses?start=${cursor}&end=${total}&limit=4${force ? "&refresh=1" : ""}`);
         if (!res.ok) throw Object.assign(new Error(res.error || "汇总失败"), { payload: res });
         state.courses = res.courses;
         state.scannedThrough = res.scannedThrough;
         state.totalWeeks = res.total;
         renderCourses();
-        $("#scan-note").textContent = `正在扫描 ${res.scannedThrough} / ${total} 周…`;
+        $("#scan-note").textContent = force
+          ? `正在重新校对 ${res.scannedThrough} / ${total} 周…`
+          : `正在扫描 ${res.scannedThrough} / ${total} 周…`;
         if (res.done) break;
         cursor = res.next;
       }
       state.scannedThrough = total;
       renderCourses();
+      if (force) toast("已按服务器最新课表重新统计");
     } catch (err) {
       const payload = err.payload || {};
       if (payload.courses) {
@@ -386,12 +389,18 @@
 
     if (through >= total) {
       $("#scan-note").textContent = `已统计全部 ${total} 周`;
-      $("#scan-btn").hidden = true;
+      const btn = $("#scan-btn");
+      btn.hidden = false;
+      btn.textContent = "重新校对";
+      btn.dataset.mode = "revalidate";
     } else {
       $("#scan-note").textContent = through
         ? `已统计 1–${through} 周 / 共 ${total} 周`
         : "尚未统计";
-      $("#scan-btn").hidden = false;
+      const btn = $("#scan-btn");
+      btn.hidden = false;
+      btn.textContent = "扫描全学期";
+      btn.dataset.mode = "scan";
     }
 
     $("#course-list").innerHTML = list.map((course) => {
@@ -601,8 +610,8 @@
       if (tab) switchTab(tab.dataset.tab);
     });
 
-    $("#scan-btn").addEventListener("click", () => loadCourses(true));
-    $("#scan-note").addEventListener("dblclick", () => loadCourses(true));
+    $("#scan-btn").addEventListener("click", () => loadCourses(true, $("#scan-btn").dataset.mode === "revalidate"));
+    $("#scan-note").addEventListener("dblclick", () => loadCourses(true, true));
 
     $("#weeks-minus").addEventListener("click", () => updateWeeks(-1));
     $("#weeks-plus").addEventListener("click", () => updateWeeks(1));
